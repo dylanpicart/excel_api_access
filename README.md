@@ -102,10 +102,11 @@ All activities (scraping, downloads, errors) are logged in:
 ---
 
 ## **Potential Improvements**
-✅ **Exclude older datasets**: Add filtering logic to scrape only the latest available data.
-✅ **Email Notifications**: Notify users when a new dataset is fetched.
-✅ **Database Integration**: Store metadata in a database for better tracking.
-✅ **Better Exception Handling**: Improve error logging for specific failures.
+- **Exclude older datasets**: Add filtering logic to scrape only the latest available data.
+- **Email Notifications**: Notify users when a new dataset is fetched.
+- **Database Integration**: Store metadata in a database for better tracking.
+- **Better Exception Handling**: Improve error logging for specific failures.
+- **Building out an API for other NYS Sites**: Build Excel API to access files from NYSed.
 
 ---
 
