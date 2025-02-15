@@ -79,7 +79,7 @@ This structure ensures that the project is well-organized for both manual execut
 
 ## **Usage**
 
-### **1️⃣ Running the Scraper Manually**
+### **Running the Scraper Manually**
 1. **Run the script to scrape and fetch new datasets:**
    ```bash
    python nyc_infohub.py
