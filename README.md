@@ -101,7 +101,35 @@ All activities (scraping, downloads, errors) are logged in:
 
 ---
 
-## **Potential Improvements**
+## **Limitations and Next Steps**
+***Bottlenecks***:
+- Multithreading Limitations:
+   - The current ThreadPoolExecutor uses a maximum of 5 threads, which is too few for 25 downloads.
+   - requests.get() is blocking and does not fully utilize multithreading due to the GIL (Global Interpreter Lock) in Python
+- Sequential Operations Before Multithreading:
+   - Scraping sub-pages and collecting links happens sequentially, delaying the start of downloads.
+- Hash Checking on Large Files:
+   - Hash calculation is done before saving rather than streaming the file while writing.
+   - This increases memory use and slows down processing.
+- Lack of Connection Pooling:
+   - requests.get() is repeatedly opening and closing connections instead of using a persistent session.
+
+ ***Solutions***:
+1. Use ThreadPoolExecutor with More Workers (Based on CPU count)
+   - Increase max_workers to min(10, os.cpu_count() * 2) for better concurrency.
+2. Use requests.Session() with ThreadPoolExecutor
+   - Use a requests.Session() to reuse connections and reduce overhead from repeated handshakes.
+3. Switch to concurrent.futures.ProcessPoolExecutor or Asyncio
+   - ThreadPoolExecutor is limited by the GIL.
+   - ProcessPoolExecutor or asyncio (with httpx) bypasses the GIL and speeds up I/O operations significantly.
+4. Stream Downloads and Compute Hashes Simultaneously
+   - Use .iter_content() with hashlib in chunks to download and hash at the same time.
+5. Parallelize Scraping of Sub-Pages
+   - Perform parallel Selenium scraping using multiple Selenium drivers with ThreadPoolExecutor.
+
+---
+
+## **Other Potential Improvements**
 - **Exclude older datasets**: Add filtering logic to scrape only the latest available data.
 - **Email Notifications**: Notify users when a new dataset is fetched.
 - **Database Integration**: Store metadata in a database for better tracking.
