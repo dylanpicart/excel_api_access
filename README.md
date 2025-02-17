@@ -104,7 +104,7 @@ All activities (scraping, downloads, errors) are logged in:
 
 ---
 
-## **Limitations and Next Steps**
+## **Previous Limitations and Solutions**
 ***Bottlenecks***:
 
 - Connection Pooling: In earlier versions, there were issues with connection pooling causing redundant connection opening/closing. This has been fixed with persistent sessions using httpx.AsyncClient.
