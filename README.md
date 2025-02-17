@@ -18,6 +18,7 @@ This version includes **multithreading with `ThreadPoolExecutor`**, **progress t
 - **Logging & Monitoring**: Tracks all activities in a log file (`logs/excel_fetch.log`).
 - **Retry Logic for Robust Downloads**: Automatically retries failed downloads up to 3 times.
 - **Progress Tracking**: Uses `tqdm` to visually represent download progress.
+- **Handles Async Session Properly**: Ensures async session and WebDriver are closed without errors.
 
 ---
 
@@ -34,12 +35,14 @@ pip install -r requirements.txt
 ```
 
 Dependencies:
+- `httpx`: For performing asynchronous HTTP requests
 - `selenium`: For web scraping
 - `pandas`: For processing Excel files
 - `requests`: For downloading files
 - `tqdm`: To display download progress
 - `concurrent.futures`: For multithreading
 - `openpyxl`, `pyxlsb`, `xlrd`: For handling different Excel file types
+
 
 ---
 
@@ -98,6 +101,21 @@ All activities (scraping, downloads, errors) are logged in:
   - **Successful downloads**
   - **Skipped downloads** (if no changes detected)
   - **Errors (network issues, file write errors, etc.)**
+
+---
+
+## **Limitations and Next Steps**
+***Bottlenecks***:
+
+- Connection Pooling: In earlier versions, there were issues with connection pooling causing redundant connection opening/closing. This has been fixed with persistent sessions using httpx.AsyncClient.
+- Async Event Loop Issues: Earlier issues with closing async sessions were fixed by proper handling of event loops using asyncio.get_event_loop() and asyncio.run().
+- Redundant Downloads: Prevented redundant downloads by utilizing SHA-256 hashes for file comparison, ensuring that unchanged files are not downloaded.
+
+***Solutions***:
+
+1. Optimized Downloading: Parallel downloads using asyncio and ThreadPoolExecutor allow multiple downloads to happen concurrently, improving speed.
+2. Persistent HTTP Sessions: Using httpx.AsyncClient ensures that HTTP connections are reused, reducing overhead.
+3. Efficient Hashing: Files are saved only if they have changed, determined by a computed hash. This ensures no unnecessary downloads.
 
 ---
 
