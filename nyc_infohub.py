@@ -29,31 +29,37 @@ logging.basicConfig(
 
 
 # -------------------- SCRAPER EXECUTION --------------------
-async def run_scraper():
-    """Run the full scraping process"""
-    scraper = NYCInfoHubScraper()
+async def main():
+        scraper = NYCInfoHubScraper()
+        try:
+            # 1. Gather Excel links
+            excel_links = await scraper.scrape_excel_links()
+            if not excel_links:
+                logging.info("No Excel links found.")
+                return
 
-    try:
-        # Scraping logic (scrape links, download files, etc.)
-        excel_links = await scraper.scrape_excel_links()
+            # 2. Concurrently download them (async)
+            files_map = await scraper.concurrent_fetch(excel_links)
+            if not files_map:
+                logging.info("No files downloaded.")
+                return
 
-        # Fetch Excel files
-        content = await scraper.concurrent_fetch(excel_links)  # Awaiting download process
+            # 3. Hash them in parallel (CPU-bound) using ProcessPoolExecutor
+            logging.info("🔬 Hashing files in parallel...")
+            hash_results = scraper.parallel_hashing(files_map)
 
-        # Save downloaded files
-        for url, file_content in content.items():
-            if file_content:
-                scraper.save_file(file_content, url)
-                
-    except Exception as e:
-        logging.error(f"❌ Error during scraping process: {e}")
+            # 4. Save files if changed
+            for url, content in files_map.items():
+                new_hash = hash_results.get(url, None)
+                if new_hash:
+                    scraper.save_file(url, content, new_hash)
 
-    finally:
-        # Ensure proper closing of session and WebDriver
-        await scraper.close()  # Await the closing of the session asynchronously
+        finally:
+            # Clean up Selenium & httpx
+            await scraper.close()
 
 
 # Run the scraper process
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(run_scraper())
+    asyncio.run(main())

@@ -2,40 +2,61 @@
 
 ## Description
 
-**NYC InfoHub Excel Data Scraper** is a Python-based script that automates the process of web scraping, downloading, and storing Excel files from the NYC InfoHub website. The script dynamically detects new datasets, extracts Excel links, and ensures that only the most recent files are downloaded.
+**NYC InfoHub Excel Data Scraper** is a Python-based project that automates the process of web scraping, downloading, and storing Excel files from the NYC InfoHub website. The scraper dynamically discovers subpages, detects relevant Excel links (filtered by year), downloads them asynchronously, and ensures that only new or changed files are saved.
 
-This version includes **multithreading with `ThreadPoolExecutor`**, **progress tracking via `tqdm`**, and **robust error handling with retry logic** for failed downloads.
+This version features:
+- **Asynchronous HTTP/2 downloads** via `httpx.AsyncClient`
+- **Recursive subpage discovery** with Selenium
+- **Parallel CPU-bound hashing** with `ProcessPoolExecutor`
+- **Detailed logging** with a rotating file handler
+- **Progress tracking** via `tqdm`
 
 ---
 
+**Important Note**: The previous iteration was fully functional and efficient, however relied too heavily on hardcoding. In this version, I use RegEx patterns to parse through sub-pages.
+
 ## Features
 
-- **Web Scraping with Selenium**: Automatically detects and extracts dataset links.
-- **Scrapes Both Parent & Sub-Pages**: Ensures all necessary files, including demographics, attendance, and graduation rates, are detected.
-- **Multithreading for Faster Downloads**: Uses `ThreadPoolExecutor` to process multiple downloads concurrently.
-- **Prevents Redundant Downloads**: Uses SHA-256 hashing to check if files have changed before downloading.
-- **Organized File Storage**: Saves files into categorized subdirectories inside `data/`.
-- **Logging & Monitoring**: Tracks all activities in a log file (`logs/excel_fetch.log`).
-- **Retry Logic for Robust Downloads**: Automatically retries failed downloads up to 3 times.
-- **Progress Tracking**: Uses `tqdm` to visually represent download progress.
-- **Handles Async Session Properly**: Ensures async session and WebDriver are closed without errors.
+- **Web Scraping with Selenium**  
+  Automatically loads InfoHub pages (and sub-pages) in a headless Chrome browser to discover Excel file links.  
+
+- **Sub-Page Recursion**  
+  Uses a regex-based pattern to find and crawl subpages (e.g., graduation results, attendance data).  
+
+- **HTTP/2 Async Downloads**  
+  Downloads Excel files using `httpx` in **streaming mode**, allowing concurrent IO while efficiently handling large files.  
+
+- **Year Filtering**  
+  Only keeps Excel files that have at least one year >= 2018 in the link (skips older or irrelevant data).  
+
+- **Parallel Hashing**  
+  Uses `ProcessPoolExecutor` to compute SHA-256 hashes in parallel, fully utilizing multi-core CPUs without blocking the async loop.  
+
+- **Prevents Redundant Downloads**  
+  Compares new file hashes with stored hashes; downloads only if the file has changed.  
+
+- **Progress & Logging**  
+  Progress bars via `tqdm` for both downloads and hashing. Detailed logs to `logs/excel_fetch.log` (rotated at 5MB, up to 2 backups).  
 
 ---
 
 ## Requirements
 
 ### **System Requirements**
-- **Python 3.8 or higher**
-- **ChromeDriver** (Ensure it's installed and in `PATH` for Selenium)
+
+- **Python 3.8 or higher**  
+- **ChromeDriver** (installed and in your PATH for Selenium)
 
 ### **Python Dependencies**
-Install required packages using:
+
+To install required packages:
+
 ```bash
 pip install -r requirements.txt
-```
+
 
 Dependencies:
-- `httpx`: For performing asynchronous HTTP requests
+- `httpx[http2]`: For performing asynchronous HTTP requests and HTTP/2 support
 - `selenium`: For web scraping
 - `pandas`: For processing Excel files
 - `requests`: For downloading files
@@ -94,14 +115,34 @@ This structure ensures that the project is well-organized for both manual execut
 
 ---
 
-## **Logging & Monitoring**
-All activities (scraping, downloads, errors) are logged in:
-- `logs/excel_fetch.log`
-- Includes:
-  - **Successful downloads**
-  - **Skipped downloads** (if no changes detected)
-  - **Errors (network issues, file write errors, etc.)**
+### What Happens Under the Hood
+1. Subpage Discovery
+- The scraper uses a regex (SUB_PAGE_PATTERN) to find subpages like graduation-results, school-quality, etc.
 
+2. Filtered Excel Links
+- Each subpage is loaded in Selenium; <a> tags ending with .xls/.xlsx/.xlsb are collected, then further filtered if they do not contain a relevant year (≥ 2018).
+
+3. Async Streaming Download
+- Downloads use httpx.AsyncClient(http2=True) to fetch files in parallel. A progress bar (tqdm) shows how many files are in flight.
+
+4. Parallel Hashing
+- Each downloaded file’s hash is computed using a ProcessPoolExecutor so multiple CPU cores can do the work simultaneously.
+
+5. Save if Changed
+- If the file’s new hash differs from the previously stored one, the file is saved and the .hash file updated.
+
+6. Logs
+- The rotating log captures successes, skips, errors, etc.
+
+---
+
+## **Logging & Monitoring**
+- Includes:
+   - Log file: logs/excel_fetch.log
+   - Rotating File Handler: Rolls over at 5 MB, retains 2 backups.
+   - Console Output: Also mirrors log messages for convenience.
+   - Progress Bars: tqdm for both downloading and hashing steps.
+   
 ---
 
 ## **Previous Limitations and Solutions**
@@ -116,6 +157,14 @@ All activities (scraping, downloads, errors) are logged in:
 1. Optimized Downloading: Parallel downloads using asyncio and ThreadPoolExecutor allow multiple downloads to happen concurrently, improving speed.
 2. Persistent HTTP Sessions: Using httpx.AsyncClient ensures that HTTP connections are reused, reducing overhead.
 3. Efficient Hashing: Files are saved only if they have changed, determined by a computed hash. This ensures no unnecessary downloads.
+
+---
+
+## **Current Limitations**
+- HTTP/2 Support: Requires httpx[http2] installed; if the server doesn’t support HTTP/2, it falls back to HTTP/1.1.
+- Depth Control: Currently only recurses subpages one level deep. If more thorough or deeper crawling is needed, logic can be extended.
+- Year Parsing: If year formats differ (e.g., “19-20” instead of “2019-2020”), the regex must be adjusted.
+- Retries: The current code logs but doesn’t implement an automatic retry strategy. That can be added if downloads frequently fail.
 
 ---
 
