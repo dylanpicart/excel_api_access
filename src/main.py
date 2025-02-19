@@ -1,31 +1,8 @@
 import os
 import logging
 import asyncio
-from url_scraper import NYCInfoHubScraper
+from excel_scraper import NYCInfoHubScraper
 from logging.handlers import RotatingFileHandler
-
-# -------------------- CONFIGURATION --------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-HASH_DIR = os.path.join(BASE_DIR, "hashes")
-LOG_DIR = os.path.join(BASE_DIR, "logs")
-LOG_FILE_PATH = os.path.join(LOG_DIR, "excel_fetch.log")
-
-# Ensure necessary directories exist
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(HASH_DIR, exist_ok=True)
-os.makedirs(LOG_DIR, exist_ok=True)
-
-# Set up Rotating Log Handler
-log_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-rotating_handler = RotatingFileHandler(LOG_FILE_PATH, maxBytes=5 * 1024 * 1024, backupCount=2)
-rotating_handler.setFormatter(log_formatter)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[rotating_handler, logging.StreamHandler()]
-)
 
 
 # -------------------- SCRAPER EXECUTION --------------------
@@ -61,5 +38,19 @@ async def main():
 
 # Run the scraper process
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    logs_dir = os.path.join(base_dir, "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+
+    # (2) Create the rotating log handler
+    log_file_path = os.path.join(logs_dir, "excel_fetch.log")
+    rotating_handler = RotatingFileHandler(log_file_path, maxBytes=5_242_880, backupCount=2)
+    rotating_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+
+    # (3) Call basicConfig once, referencing your rotating handler
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[rotating_handler, logging.StreamHandler()]
+    )    
     asyncio.run(main())

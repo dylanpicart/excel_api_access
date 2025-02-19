@@ -1,8 +1,8 @@
-# NYC InfoHub Excel Data Scraper
+# Excel API Web Scraper
 
 ## Description
 
-**NYC InfoHub Excel Data Scraper** is a Python-based project that automates the process of web scraping, downloading, and storing Excel files from the NYC InfoHub website. The scraper dynamically discovers subpages, detects relevant Excel links (filtered by year), downloads them asynchronously, and ensures that only new or changed files are saved.
+**Excel API Web Scraper** is a Python-based project that automates the process of web scraping, downloading, and storing Excel files from the NYC InfoHub website. The scraper dynamically discovers subpages, detects relevant Excel links (filtered by year), downloads them asynchronously, and ensures that only new or changed files are saved.
 
 This version features:
 - **Asynchronous HTTP/2 downloads** via `httpx.AsyncClient`
@@ -12,8 +12,6 @@ This version features:
 - **Progress tracking** via `tqdm`
 
 ---
-
-**Important Note**: The previous iteration was fully functional and efficient, however relied too heavily on hardcoding. In this version, I use RegEx patterns to parse through sub-pages.
 
 ## Features
 
@@ -59,10 +57,10 @@ Dependencies:
 - `httpx[http2]`: For performing asynchronous HTTP requests and HTTP/2 support
 - `selenium`: For web scraping
 - `pandas`: For processing Excel files
-- `requests`: For downloading files
 - `tqdm`: To display download progress
 - `concurrent.futures`: For multithreading
 - `openpyxl`, `pyxlsb`, `xlrd`: For handling different Excel file types
+- `pytest`, `pytest-asyncio`, `pytest-cov`: For module testing 
 ```
 
 ---
@@ -73,20 +71,24 @@ Dependencies:
 project_root/
 │
 ├── __init__.py             # Package initializer
+├── .github                 # Workflow CI/CD integration
 ├── .gitignore              # Ignore logs, venv, data, and cache files
 ├── .env                    # Environment variables (excluded from version control)
 ├── README.md               # Project documentation
 ├── requirements.txt        # Project dependencies
 ├── setup.py                # Project packaging file
+├── pyproject.toml          # Specify build system requirements
 ├── LICENSE                 # License file
 │
 ├── venv/                   # Virtual environment (ignored by version control)
-│
-├── nyc_infohub.py          # Main scraper script
-├── url_scraper.py          # Web scraping module
+│   
+├── src/
+│   ├── main.py             # Main scraper script
+│   └── excel_scraper.py    # Web scraping module
 │
 ├── logs/                   # Directory for log files
-│   └── excel_fetch.log
+│
+├── tests/                  # Directory for unit, integration, and end-to-end testing   
 │
 ├── data/                   # Directory for downloaded Excel files
 │   ├── graduation/
@@ -106,7 +108,7 @@ This structure ensures that the project is well-organized for both manual execut
 ### **Running the Scraper Manually**
 1. **Run the script to scrape and fetch new datasets:**
    ```bash
-   python nyc_infohub.py
+   python main.py
    ```
 2. **View logs for download status and debugging:**
    ```bash
@@ -145,6 +147,34 @@ This structure ensures that the project is well-organized for both manual execut
    
 ---
 
+## Testing
+
+We use **Pytest** for our test suite, located in the `tests/` folder.
+
+1. **Install dev/test dependencies** (either in your `setup.py` or via `pip install -r requirements.txt` if you listed them there).
+
+2. **Run tests**:
+```bash
+python -m pytest tests/
+```
+
+3. **View Coverage** (if you have `pytest-cov`):
+```bash
+python -m pytest tests/ --cov=src
+```
+
+---
+
+## CI/CD Pipeline
+
+A GitHub Actions workflow is set up in `.github/workflows/ci-cd.yml`. It:
+
+1. **Builds and tests** the project on push or pull request to the `main` branch.
+2. If tests pass and you push a **tagged release**, it **builds a distribution** and can **upload** to PyPI using **Twine** (when secrets are configured).
+3. Check the **Actions** tab on your repo to see logs and statuses of each workflow run.
+
+---
+
 ## **Previous Limitations and Solutions**
 ***Bottlenecks***:
 
@@ -157,6 +187,7 @@ This structure ensures that the project is well-organized for both manual execut
 1. Optimized Downloading: Parallel downloads using asyncio and ThreadPoolExecutor allow multiple downloads to happen concurrently, improving speed.
 2. Persistent HTTP Sessions: Using httpx.AsyncClient ensures that HTTP connections are reused, reducing overhead.
 3. Efficient Hashing: Files are saved only if they have changed, determined by a computed hash. This ensures no unnecessary downloads.
+4. Excluded older datasets by added `re` filtering logic to scrape only the latest available data.
 
 ---
 
@@ -169,7 +200,7 @@ This structure ensures that the project is well-organized for both manual execut
 ---
 
 ## **Other Potential Improvements**
-- **Exclude older datasets**: Add filtering logic to scrape only the latest available data.
+- **Add NYSed Website**: Scrape data from NYSed.
 - **Email Notifications**: Notify users when a new dataset is fetched.
 - **Database Integration**: Store metadata in a database for better tracking.
 - **Better Exception Handling**: Improve error logging for specific failures.

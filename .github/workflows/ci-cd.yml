@@ -1,0 +1,66 @@
+name: CI-CD  # CI/CD workflow
+
+on:
+  push:
+    branches: [ "main" ]      # Trigger on pushes to 'main'
+  pull_request:
+    branches: [ "main" ]      # Trigger on PRs targeting 'main'
+
+jobs:
+  build-test:                 # Our first job for building and testing
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code  # Check out your repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python   # Install desired Python version
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Editable install of your package so your code in src/ 
+          # is recognized as a Python package
+          pip install -e .
+          # If you have additional dev/test dependencies, 
+          # either put them in setup.py or:
+          # pip install -r requirements.txt
+
+      - name: Run tests
+        run: |
+          # Use python -m pytest to ensure we use the same Python interpreter
+          python -m pytest tests/
+
+  deploy:                      # Second job for "CD" or deployment
+    needs: [ build-test ]      # Only run if 'build-test' succeeds
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Build distribution
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine  # Tools needed to build & upload your package
+          python -m build          # Creates dist/*.whl and dist/*.tar.gz
+
+      - name: Publish to PyPI
+        # Sample checks if the push is a tagged release.
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          TWINE_USERNAME: ${{ secrets.TWINE_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
+        run: |
+          # By default, this will push to PyPI.
+          # For TestPyPI, pass --repository-url or set env var:
+          # python -m twine upload --repository-url https://test.pypi.org/legacy/ dist/*
+          python -m twine upload dist/*

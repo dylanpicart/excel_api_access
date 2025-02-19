@@ -32,10 +32,6 @@ REPORT_URLS = {
                      "information-and-data-overview"
 }
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-HASH_DIR = os.path.join(BASE_DIR, "hashes")
-LOG_DIR = os.path.join(BASE_DIR, "logs")
 
 # -------------------- NYCInfoHubScraperc Class --------------------
 class NYCInfoHubScraper:
@@ -47,11 +43,17 @@ class NYCInfoHubScraper:
         "other_reports": []  # Default category for uncategorized files
     }
 
-    def __init__(self):
+    def __init__(self, base_dir=None, data_dir=None, hash_dir=None, log_dir=None):
+        # Initialize directories
+        self.base_dir = base_dir or os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        self.data_dir = data_dir or os.path.join(self.base_dir, "data")
+        self.hash_dir = hash_dir or os.path.join(self.base_dir, "hashes")
+        self.log_dir = log_dir or os.path.join(self.base_dir, "logs")
+
         # Re-create directories if needed
-        os.makedirs(DATA_DIR, exist_ok=True)
-        os.makedirs(HASH_DIR, exist_ok=True)
-        os.makedirs(LOG_DIR, exist_ok=True)
+        os.makedirs(self.data_dir, exist_ok=True)
+        os.makedirs(self.hash_dir, exist_ok=True)
+        os.makedirs(self.log_dir, exist_ok=True)
 
         # Configure Selenium driver
         self.driver = self.configure_driver()
@@ -266,10 +268,10 @@ class NYCInfoHubScraper:
         file_name = os.path.basename(url)
         category = self.categorize_file(file_name)
 
-        save_path = os.path.join(DATA_DIR, category, file_name)
+        save_path = os.path.join(self.data_dir, category, file_name)
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
-        hash_path = os.path.join(HASH_DIR, category, f"{file_name}.hash")
+        hash_path = os.path.join(self.hash_dir, category, f"{file_name}.hash")
         os.makedirs(os.path.dirname(hash_path), exist_ok=True)
 
         old_hash = None
