@@ -69,6 +69,10 @@ class NYCInfoHubScraper:
         options = webdriver.ChromeOptions()
         options.add_argument("--headless")
         options.add_argument("--no-sandbox")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-plugins-discovery")
 
         # If CHROME_DRIVER_PATH is set in .env, use it; else rely on PATH
         chrome_path = os.getenv("CHROME_DRIVER_PATH", "")
@@ -293,10 +297,17 @@ class NYCInfoHubScraper:
 
     async def close(self):
         """Close Selenium and the async httpx session."""
-        self.driver.quit()
+        # Close the WebDriver
+        if self.driver:
+            self.driver.quit()
+            self.driver = None
+            logging.info("WebDriver closed.")
+
+        # Close the HTTPX session
         try:
             await self.session.aclose()
         except Exception as e:
             logging.error(f"❌ Error closing session: {e}")
         finally:
             logging.info("✅ Scraping complete")
+
