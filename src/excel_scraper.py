@@ -201,7 +201,7 @@ class NYCInfoHubScraper:
         try:
             async with self.session.stream("GET", url, timeout=10) as resp:
                 if resp.status_code == 200:
-                    # Option A: Accumulate chunks in memory (still better than reading all at once)
+                    # Accumulate chunks in memory (still better than reading all at once)
                     chunks = []
                     async for chunk in resp.aiter_bytes(chunk_size=CHUNK_SIZE):
                         chunks.append(chunk)
