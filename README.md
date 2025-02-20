@@ -170,7 +170,7 @@ python -m pytest tests/ --cov=src
 A GitHub Actions workflow is set up in `.github/workflows/ci-cd.yml`. It:
 
 1. **Builds and tests** the project on push or pull request to the `main` branch.
-2. If tests pass and you push a **tagged release**, it **builds a distribution** and can **upload** to PyPI using **Twine** (when secrets are configured).
+2. If tests pass and you push a **tagged release**, it **builds a distribution** and can **upload** to PyPI using **Twine**.
 3. Check the **Actions** tab on your repo to see logs and statuses of each workflow run.
 
 ---
@@ -204,7 +204,6 @@ A GitHub Actions workflow is set up in `.github/workflows/ci-cd.yml`. It:
 - **Email Notifications**: Notify users when a new dataset is fetched.
 - **Database Integration**: Store metadata in a database for better tracking.
 - **Better Exception Handling**: Improve error logging for specific failures.
-- **Building out an API for other NYS Sites**: Build Excel API to access files from NYSed.
 
 ---
 
