@@ -192,7 +192,7 @@ A GitHub Actions workflow is set up in `.github/workflows/ci-cd.yml`. It:
 ---
 
 ## **Current Limitations**
-- HTTP/2 Support: Requires httpx[http2] installed; if the server doesn’t support HTTP/2, it falls back to HTTP/1.1.
+- HTTP/2 Support: Requires `httpx[http2]` installed; if the server doesn’t support HTTP/2, it falls back to HTTP/1.1.
 - Depth Control: Currently only recurses subpages one level deep. If more thorough or deeper crawling is needed, logic can be extended.
 - Year Parsing: If year formats differ (e.g., “19-20” instead of “2019-2020”), the regex must be adjusted.
 - Retries: The current code logs but doesn’t implement an automatic retry strategy. That can be added if downloads frequently fail.
