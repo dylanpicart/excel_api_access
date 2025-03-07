@@ -5,9 +5,10 @@ __pycache__/
 *.pyd
 *.so
 
-# Ignore virtual environment
+# Ignore virtual environments
+venv_win/
+venv_wsl/
 venv/
-env/
 
 # Ignore environment variables
 .env

@@ -6,19 +6,22 @@ import httpx
 import re
 import concurrent.futures
 from dotenv import load_dotenv
+from urllib.parse import urlparse
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from tenacity import retry, stop_after_attempt, wait_fixed
 from tqdm import tqdm
 import pandas as pd
 
 # Load environment variables from .env
 load_dotenv()
+logging.info(f"CHROMEDRIVER_PATH: {os.environ.get('CHROMEDRIVER_PATH')}")
 
 # Constants
 EXCEL_FILE_EXTENSIONS = ('.xls', '.xlsx', '.xlsb')
-SUB_PAGE_PATTERN = re.compile(r'.*/reports/(students-and-schools/school-quality|academics/graduation-results)(?:/.*)?', re.IGNORECASE)
+SUB_PAGE_PATTERN = re.compile(r'.*/reports/(students-and-schools/school-quality|academics/graduation-results|test-results)(?:/.*)?', re.IGNORECASE)
 CHUNK_SIZE = 65536  # 64 KB
 YEAR_PATTERN = re.compile(r'20\d{2}', re.IGNORECASE)
 
@@ -28,19 +31,23 @@ REPORT_URLS = {
                   "information-and-data-overview/end-of-year-attendance-and-chronic-absenteeism-data",
     "demographics": "https://infohub.nyced.org/reports/students-and-schools/school-quality/"
                     "information-and-data-overview",
+    "test_results": "https://infohub.nyced.org/reports/academics/test-results",
     "other_reports": "https://infohub.nyced.org/reports/students-and-schools/school-quality/"
                      "information-and-data-overview"
 }
 
+EXCLUDED_PATTERNS = ["quality-review", "nyc-school-survey", "signout", "signin", "login", "logout"]
 
-# -------------------- NYCInfoHubScraperc Class --------------------
+
+# -------------------- NYCInfoHubScraper Class --------------------
 class NYCInfoHubScraper:
     # Define categories for organizing downloaded Excel files
     CATEGORIES = {
         "graduation": ["graduation", "cohort"],
         "attendance": ["attendance", "chronic", "absentee"],
         "demographics": ["demographics", "snapshot"],
-        "other_reports": []  # Default category for uncategorized files
+        "test_results": ["test", "results", "regents", "ela", "english language arts", "math", "mathematics"],
+        "other_reports": [] # Default category  
     }
 
     def __init__(self, base_dir=None, data_dir=None, hash_dir=None, log_dir=None):
@@ -66,6 +73,8 @@ class NYCInfoHubScraper:
 
     def configure_driver(self):
         """Configure Selenium WebDriver (Chrome)."""
+        logging.info("Starting WebDriver configuration...")
+        
         options = webdriver.ChromeOptions()
         options.add_argument("--headless")
         options.add_argument("--no-sandbox")
@@ -73,16 +82,47 @@ class NYCInfoHubScraper:
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-extensions")
         options.add_argument("--disable-plugins-discovery")
+        logging.info("Chrome options set (headless, etc.).")
 
-        # If CHROME_DRIVER_PATH is set in .env, use it; else rely on PATH
+        # Check if CHROME_DRIVER_PATH is set
         chrome_path = os.getenv("CHROME_DRIVER_PATH", "")
         if chrome_path:
+            logging.info(f"Using custom ChromeDriver path: {chrome_path}")
             driver = webdriver.Chrome(executable_path=chrome_path, options=options)
         else:
+            logging.info("Using system ChromeDriver from PATH.")
             driver = webdriver.Chrome(options=options)
+
+        # Optionally set a page load timeout so we don't get stuck too long
+        driver.set_page_load_timeout(60)
+        logging.info("Page load timeout set to 60 seconds.")
 
         logging.info("WebDriver configured successfully.")
         return driver
+
+    
+    def should_skip_link(self, href: str) -> bool:
+        """
+        Returns True if href should be skipped based on anchor fragments
+        or the EXCLUDED_PATTERNS list.
+        """
+        if not href:
+            return True
+
+        parsed = urlparse(href)
+
+        # Skip anchor fragment links
+        if parsed.fragment:
+            return True
+
+        # Check for excluded substrings (case-insensitive)
+        href_lower = href.lower()
+        for pattern in EXCLUDED_PATTERNS:
+            if pattern in href_lower:
+                return True
+
+        # If none of the skip conditions were met, return False => don't skip
+        return False
 
     async def discover_relevant_subpages(self, url, depth=1, visited=None):
         """
@@ -93,12 +133,12 @@ class NYCInfoHubScraper:
             visited = set()
         if url in visited:
             return set()
-
         visited.add(url)
+
         discovered_links = set()
         try:
             self.driver.get(url)
-            WebDriverWait(self.driver, 10).until(
+            WebDriverWait(self.driver, 5).until(
                 EC.presence_of_element_located((By.TAG_NAME, "a"))
             )
         except Exception as e:
@@ -108,7 +148,13 @@ class NYCInfoHubScraper:
         anchors = self.driver.find_elements(By.TAG_NAME, "a")
         for a in anchors:
             href = a.get_attribute("href")
-            if href and SUB_PAGE_PATTERN.match(href):
+            # Uses skip check to avoid unnecessary processing and quickly verify which links to skip
+            if self.should_skip_link(href):
+                logging.debug(f"Skipping link: {href}")
+                continue
+
+            # If pass all skip checks and matches subpage pattern, add to discovered set
+            if SUB_PAGE_PATTERN.match(href):
                 discovered_links.add(href)
 
         # Recurse if depth > 1
@@ -192,6 +238,7 @@ class NYCInfoHubScraper:
         logging.info(f"📊 Total unique Excel links found: {len(excel_links)}")
         return list(excel_links)
 
+    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
     async def download_excel(self, url):
         """
         Downloads an Excel file asynchronously using stream mode.
@@ -212,7 +259,7 @@ class NYCInfoHubScraper:
                     logging.error(f"❌ Download failed {resp.status_code}: {url}")
                     return url, None
         except Exception as e:
-            logging.error(f"❌ Error streaming {url}: {e}")
+            logging.error(f"❌ Error streaming {url}: {type(e).__name__} - {e}", exc_info=True)
         return url, None
 
     async def concurrent_fetch(self, urls):

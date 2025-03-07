@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="excel_api_access",
-    version="1.0.3",
+    version="1.0.4",
     author="Dylan Picart",
     author_email="dpicart@partnershipwithchildren.org",
     description="A Python scraper for downloading Excel datasets from NYC InfoHub.",
@@ -13,6 +13,7 @@ setup(
     package_dir={"": "src"},
     install_requires=[
         "httpx[http2]>=0.28.1",
+        "tenacity>=8.0.1",
         "selenium>=4.10.0",
         "pandas>=1.3.0",
         "tqdm>=4.62.0",

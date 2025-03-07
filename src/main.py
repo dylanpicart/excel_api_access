@@ -1,9 +1,11 @@
 import os
+import sys
 import logging
 import asyncio
-from excel_scraper import NYCInfoHubScraper
+from src.excel_scraper import NYCInfoHubScraper
 from logging.handlers import RotatingFileHandler
 
+sys.stdout.reconfigure(line_buffering=True) # Real-time logging 
 
 # -------------------- SCRAPER EXECUTION --------------------
 async def main():
@@ -30,11 +32,13 @@ async def main():
                 new_hash = hash_results.get(url, None)
                 if new_hash:
                     scraper.save_file(url, content, new_hash)
-
+                    
+        except Exception as e:
+            logging.error(f"Some error occurred: {e}", exc_info=True)
         finally:
             # Clean up Selenium & httpx
-            await scraper.close()
-
+            await scraper.close()  # logs “WebDriver closed.”
+        return 0
 
 # Run scraper process
 if __name__ == "__main__":
@@ -44,13 +48,20 @@ if __name__ == "__main__":
 
     # Create rotating log handler
     log_file_path = os.path.join(logs_dir, "excel_fetch.log")
-    rotating_handler = RotatingFileHandler(log_file_path, maxBytes=5_242_880, backupCount=2)
+    rotating_handler = RotatingFileHandler(log_file_path, maxBytes=5_242_880, backupCount=2, encoding="utf-8")
     rotating_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 
     # Call basicConfig once, referencing rotating file handler
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[rotating_handler, logging.StreamHandler()]
+        handlers=[rotating_handler, logging.StreamHandler()],
+        force=True
     )    
-    asyncio.run(main())
+
+    try:
+        exit_code = asyncio.run(main())
+        sys.exit(exit_code)  # Signals a successful run to caller (cron or other processes)
+    except Exception as e:
+        logging.error(f"Script failed: {e}", exc_info=True)
+        sys.exit(1)  # Signals an error code to caller (cron or other processes)

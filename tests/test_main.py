@@ -4,6 +4,7 @@ import pytest
 import asyncio
 import logging
 from unittest.mock import patch, MagicMock
+from src.excel_scraper import NYCInfoHubScraper
 from src.main import main as main_entrypoint
 
 @pytest.mark.asyncio
@@ -33,10 +34,10 @@ async def test_main_scraper_flow():
         "http://example.com/graduation_2019.xls": "hash2"
     }
 
-    with patch("excel_scraper.NYCInfoHubScraper.scrape_excel_links", return_value=mock_excel_links), \
-         patch("excel_scraper.NYCInfoHubScraper.concurrent_fetch", return_value=mock_files_map), \
-         patch("excel_scraper.NYCInfoHubScraper.parallel_hashing", return_value=mock_hashes), \
-         patch("excel_scraper.NYCInfoHubScraper.save_file") as mock_save:
+    with patch("src.excel_scraper.NYCInfoHubScraper.scrape_excel_links", return_value=mock_excel_links), \
+         patch("src.excel_scraper.NYCInfoHubScraper.concurrent_fetch", return_value=mock_files_map), \
+         patch("src.excel_scraper.NYCInfoHubScraper.parallel_hashing", return_value=mock_hashes), \
+         patch("src.excel_scraper.NYCInfoHubScraper.save_file") as mock_save:
         
         # Now run the actual main flow
         await main_entrypoint()
