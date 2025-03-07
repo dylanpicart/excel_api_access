@@ -52,21 +52,21 @@ class NYCInfoHubScraper:
 
     def __init__(self, base_dir=None, data_dir=None, hash_dir=None, log_dir=None):
         # Initialize directories
-        self.base_dir = base_dir or os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        self.data_dir = data_dir or os.path.join(self.base_dir, "data")
-        self.hash_dir = hash_dir or os.path.join(self.base_dir, "hashes")
-        self.log_dir = log_dir or os.path.join(self.base_dir, "logs")
+        self._base_dir = base_dir or os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        self._data_dir = data_dir or os.path.join(self._base_dir, "data")
+        self._hash_dir = hash_dir or os.path.join(self._base_dir, "hashes")
+        self._log_dir = log_dir or os.path.join(self._base_dir, "logs")
 
         # Re-create directories if needed
-        os.makedirs(self.data_dir, exist_ok=True)
-        os.makedirs(self.hash_dir, exist_ok=True)
-        os.makedirs(self.log_dir, exist_ok=True)
+        os.makedirs(self._data_dir, exist_ok=True)
+        os.makedirs(self._hash_dir, exist_ok=True)
+        os.makedirs(self._log_dir, exist_ok=True)
 
         # Configure Selenium driver
-        self.driver = self.configure_driver()
+        self._driver = self.configure_driver()
 
         # Create an async HTTP client with concurrency limits
-        self.session = httpx.AsyncClient(
+        self._session = httpx.AsyncClient(
             http2=True, limits=httpx.Limits(max_connections=80, max_keepalive_connections=40),
             timeout=5
         )
@@ -137,15 +137,15 @@ class NYCInfoHubScraper:
 
         discovered_links = set()
         try:
-            self.driver.get(url)
-            WebDriverWait(self.driver, 5).until(
+            self._driver.get(url)
+            WebDriverWait(self._driver, 5).until(
                 EC.presence_of_element_located((By.TAG_NAME, "a"))
             )
         except Exception as e:
             logging.error(f"❌ Error loading {url}: {e}")
             return discovered_links
 
-        anchors = self.driver.find_elements(By.TAG_NAME, "a")
+        anchors = self._driver.find_elements(By.TAG_NAME, "a")
         for a in anchors:
             href = a.get_attribute("href")
             # Uses skip check to avoid unnecessary processing and quickly verify which links to skip
@@ -177,15 +177,15 @@ class NYCInfoHubScraper:
 
         valid_links = []
         try:
-            self.driver.get(url)
-            WebDriverWait(self.driver, 10).until(
+            self._driver.get(url)
+            WebDriverWait(self._driver, 10).until(
                 EC.presence_of_element_located((By.TAG_NAME, "a"))
             )
         except Exception as e:
             logging.error(f"❌ Error waiting for page load on {url}: {e}")
             return valid_links  # return empty if the page failed
 
-        anchors = self.driver.find_elements(By.TAG_NAME, "a")
+        anchors = self._driver.find_elements(By.TAG_NAME, "a")
         for a in anchors:
             href = a.get_attribute("href")
             # Skip if already visited
@@ -246,7 +246,7 @@ class NYCInfoHubScraper:
         Returns (url, content) if successful, or (url, None) otherwise.
         """
         try:
-            async with self.session.stream("GET", url, timeout=10) as resp:
+            async with self._session.stream("GET", url, timeout=10) as resp:
                 if resp.status_code == 200:
                     # Accumulate chunks in memory (still better than reading all at once)
                     chunks = []
@@ -319,10 +319,10 @@ class NYCInfoHubScraper:
         file_name = os.path.basename(url)
         category = self.categorize_file(file_name)
 
-        save_path = os.path.join(self.data_dir, category, file_name)
+        save_path = os.path.join(self._data_dir, category, file_name)
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
-        hash_path = os.path.join(self.hash_dir, category, f"{file_name}.hash")
+        hash_path = os.path.join(self._hash_dir, category, f"{file_name}.hash")
         os.makedirs(os.path.dirname(hash_path), exist_ok=True)
 
         old_hash = None
@@ -345,14 +345,14 @@ class NYCInfoHubScraper:
     async def close(self):
         """Close Selenium and the async httpx session."""
         # Close the WebDriver
-        if self.driver:
-            self.driver.quit()
-            self.driver = None
+        if self._driver:
+            self._driver.quit()
+            self._driver = None
             logging.info("WebDriver closed.")
 
         # Close the HTTPX session
         try:
-            await self.session.aclose()
+            await self._session.aclose()
         except Exception as e:
             logging.error(f"❌ Error closing session: {e}")
         finally:
