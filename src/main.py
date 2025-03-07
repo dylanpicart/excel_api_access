@@ -3,8 +3,6 @@ import sys
 import logging
 import asyncio
 from logging.handlers import RotatingFileHandler
-
-# Import your refactored scraper from excel_scraper.py
 from .excel_scraper import NYCInfoHubScraper
 
 # Ensure stdout is line-buffered so logs appear in real time

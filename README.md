@@ -76,8 +76,6 @@ pip install -r requirements.txt
 - `openpyxl`, `pyxlsb`, `xlrd`: For handling different Excel file types
 - `pytest`, `pytest-asyncio`, `pytest-cov`: For module testing
 
-```
-
 ---
 
 ## Scheduling the Scraper
