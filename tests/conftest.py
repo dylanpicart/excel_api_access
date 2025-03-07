@@ -3,9 +3,9 @@
 import pytest
 import logging
 import asyncio
+
+# Updated import to excel_scraper instead of src.excel_scraper
 from src.excel_scraper import NYCInfoHubScraper
-
-
 
 @pytest.fixture(scope="session")
 def test_scraper():
@@ -20,7 +20,6 @@ def test_scraper():
 
     # Teardown code after tests finish
     logging.info("Tearing down NYCInfoHubScraper after tests.")
-    # Safely close the scraper's resources:
     try:
         asyncio.run(scraper.close())
     except Exception as e:

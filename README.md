@@ -2,7 +2,11 @@
 
 ## Description
 
-**Excel API Web Scraper** is a Python-based project that automates the process of web scraping, downloading, and storing Excel files from the NYC InfoHub website. The scraper dynamically discovers subpages, detects relevant Excel links (filtered by year), downloads them asynchronously, and ensures that only new or changed files are saved.
+**Excel API Web Scraper** is a Python-based project that automates the process of web scraping, downloading, and storing Excel files from the NYC InfoHub website. It employs an **object-oriented architecture**—splitting functionality across multiple classes to improve maintainability and testability:
+
+- **`NYCInfoHubScraper`** (subclass of `BaseScraper`) provides specialized logic for discovering and filtering NYC InfoHub Excel links.  
+- **`FileManager`** encapsulates file I/O (saving, hashing, directory organization).  
+- **`BaseScraper`** handles core scraping concerns such as Selenium setup, asynchronous HTTP downloads, concurrency, and hashing.  
 
 This version features:
 
@@ -11,34 +15,38 @@ This version features:
 - **Parallel CPU-bound hashing** with `ProcessPoolExecutor`
 - **Detailed logging** with a rotating file handler
 - **Progress tracking** via `tqdm`
+- **Clean separation** of concerns thanks to the new classes (`FileManager`, `NYCInfoHubScraper`, etc.)
 
 ---
 
 ## Features
 
 - **Web Scraping with Selenium**  
-  Automatically loads InfoHub pages (and sub-pages) in a headless Chrome browser to discover Excel file links.  
+  Automatically loads InfoHub pages (and sub-pages) in a headless Chrome browser to discover Excel file links.
 
 - **Retries for Slow Connections**  
-   Uses `tenacity` to retry downloads when timeouts or transient errors occur.
+  Uses `tenacity` to retry downloads when timeouts or transient errors occur.
 
 - **Sub-Page Recursion**  
-  Uses a regex-based pattern to find and crawl subpages (e.g., graduation results, attendance data).  
+  Uses a regex-based pattern to find and crawl subpages (e.g., graduation results, attendance data).
 
 - **HTTP/2 Async Downloads**  
-  Downloads Excel files using `httpx` in **streaming mode**, allowing concurrent IO while efficiently handling large files.  
+  Downloads Excel files using `httpx` in **streaming mode**, allowing concurrent IO while efficiently handling large files.
 
 - **Year Filtering**  
-  Only keeps Excel files that have at least one year >= 2018 in the link (skips older or irrelevant data).  
+  Only keeps Excel files that have at least one year >= 2018 in the link (skips older or irrelevant data).
 
 - **Parallel Hashing**  
-  Uses `ProcessPoolExecutor` to compute SHA-256 hashes in parallel, fully utilizing multi-core CPUs without blocking the async loop.  
+  Uses `ProcessPoolExecutor` to compute SHA-256 hashes in parallel, fully utilizing multi-core CPUs without blocking the async loop.
 
 - **Prevents Redundant Downloads**  
-  Compares new file hashes with stored hashes; downloads only if the file has changed.  
+  Compares new file hashes with stored hashes; downloads only if the file has changed.
 
 - **Progress & Logging**  
-  Progress bars via `tqdm` for both downloads and hashing. Detailed logs to `logs/excel_fetch.log` (rotated at 5MB, up to 2 backups).  
+  Progress bars via `tqdm` for both downloads and hashing. Detailed logs to `logs/excel_fetch.log` (rotated at 5MB, up to 2 backups).
+
+- **Refactored OOP Architecture**  
+  With the introduction of `FileManager` for file operations, `BaseScraper` for shared scraping logic, and `NYCInfoHubScraper` for specialized InfoHub routines, the code is more modular and maintainable.
 
 ---
 
@@ -55,17 +63,19 @@ To install required packages:
 
 ```bash
 pip install -r requirements.txt
+```
 
+**Dependencies**:
 
-Dependencies:
 - `httpx[http2]`: For performing asynchronous HTTP requests and HTTP/2 support
 - `tenacity`: For retying
 - `selenium`: For web scraping
-- `pandas`: For processing Excel files
+- `pandas`: For processing Excel files (optional)
 - `tqdm`: To display download progress
 - `concurrent.futures`: For multithreading
 - `openpyxl`, `pyxlsb`, `xlrd`: For handling different Excel file types
-- `pytest`, `pytest-asyncio`, `pytest-cov`: For module testing 
+- `pytest`, `pytest-asyncio`, `pytest-cov`: For module testing
+
 ```
 
 ---
@@ -148,10 +158,11 @@ Depending on where you prefer to run the scraper, you can pick one or both. Each
 
 ## Directory Structure
 
-```
+```text
+
 project_root/
 │
-├── __init__.py             # Package initializer
+├── **init**.py             # Package initializer
 ├── .github                 # Workflow CI/CD integration
 ├── .gitignore              # Ignore logs, venv, data, and cache files
 ├── .env                    # Environment variables (excluded from version control)
@@ -163,25 +174,27 @@ project_root/
 │
 ├── venv_wsl/               # WSL Virtual Environment (ignored by version control)
 ├── venv_win/               # Windows Virtual Environment (ignored by version control)
-│   
+│
 ├── src/
 │   ├── main.py             # Main scraper script
 │   └── excel_scraper.py    # Web scraping module
 │
 ├── logs/                   # Directory for log files
 │
-├── tests/                  # Directory for unit, integration, and end-to-end testing   
+├── tests/                  # Directory for unit, integration, and end-to-end testing
 │
 ├── data/                   # Directory for downloaded Excel files
 │   ├── graduation/
 │   ├── attendance/
 │   ├── demographics/
+│   ├── test_results/
 │   └── other_reports/
 │
 └── hashes/                 # Directory for storing file hashes
+
 ```
 
-This structure ensures that the project is well-organized for both manual execution and packaging as a Python module.
+The structure is well-organized for both manual execution and packaging as a Python module.
 
 ---
 
@@ -285,6 +298,7 @@ A GitHub Actions workflow is set up in `.github/workflows/ci-cd.yml`. It:
 2. Persistent HTTP Sessions: Using httpx.AsyncClient ensures that HTTP connections are reused, reducing overhead.
 3. Efficient Hashing: Files are saved only if they have changed, determined by a computed hash. This ensures no unnecessary downloads.
 4. Excluded older datasets by added `re` filtering logic to scrape only the latest available data.
+5. Clearer Architecture: Splitting logic into `FileManager`, `BaseScraper`, and `NYCInfoHubScraper` has improved modularity and test coverage.
 
 ---
 
@@ -295,6 +309,10 @@ A GitHub Actions workflow is set up in `.github/workflows/ci-cd.yml`. It:
 - **Year Parsing**: If year formats differ (e.g., “19-20” instead of “2019-2020”), the regex must be adjusted or enhanced.
 - **Retries**: Now incorporates an automatic retry strategy via `tenacity`. For highly customized or advanced retry logic, the code can be extended further.
 - **Dual Virtual Environments**: Separate venvs  are maintained (one for WSL and one for Windows). Both can run the script successfully when properly configured—via cron on WSL or Task Scheduler on Windows.
+- File Download Security: Currently relies on chunked streaming and SHA-256 hashing for change detection, but does not verify the authenticity of the files. For higher security:
+  - Integrate virus scanning or malware checks after download.
+  - Validate MIME type or file signatures to confirm it’s an Excel file.
+  - Use TLS certificate pinning if the host supports it.
 
 ---
 
@@ -302,7 +320,7 @@ A GitHub Actions workflow is set up in `.github/workflows/ci-cd.yml`. It:
 
 - **Email Notifications**: Notify users when a new dataset is fetched.
 - **Database Integration**: Store metadata in a database for better tracking.
-- **Better Exception Handling**: Improve error logging for specific failures.
+- **More Robust Exception Handling**: Log specific error types or integrate external alerting.
 
 ---
 

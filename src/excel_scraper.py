@@ -11,70 +11,110 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from abc import ABC, abstractmethod
 from tenacity import retry, stop_after_attempt, wait_fixed
 from tqdm import tqdm
-import pandas as pd
 
-# Load environment variables from .env
 load_dotenv()
 logging.info(f"CHROMEDRIVER_PATH: {os.environ.get('CHROMEDRIVER_PATH')}")
 
-# Constants
 EXCEL_FILE_EXTENSIONS = ('.xls', '.xlsx', '.xlsb')
-SUB_PAGE_PATTERN = re.compile(r'.*/reports/(students-and-schools/school-quality|academics/graduation-results|test-results)(?:/.*)?', re.IGNORECASE)
-CHUNK_SIZE = 65536  # 64 KB
+CHUNK_SIZE = 65536
 YEAR_PATTERN = re.compile(r'20\d{2}', re.IGNORECASE)
+SUB_PAGE_PATTERN = re.compile(
+    r'.*/reports/(students-and-schools/school-quality|academics/graduation-results|test-results)(?:/.*)?',
+    re.IGNORECASE
+)
+EXCLUDED_PATTERNS = ["quality-review", "nyc-school-survey", "signout", "signin", "login", "logout"]
 
 REPORT_URLS = {
     "graduation": "https://infohub.nyced.org/reports/academics/graduation-results",
-    "attendance": "https://infohub.nyced.org/reports/students-and-schools/school-quality/"
-                  "information-and-data-overview/end-of-year-attendance-and-chronic-absenteeism-data",
-    "demographics": "https://infohub.nyced.org/reports/students-and-schools/school-quality/"
-                    "information-and-data-overview",
+    "attendance": (
+        "https://infohub.nyced.org/reports/students-and-schools/school-quality/"
+        "information-and-data-overview/end-of-year-attendance-and-chronic-absenteeism-data"
+    ),
+    "demographics": (
+        "https://infohub.nyced.org/reports/students-and-schools/school-quality/"
+        "information-and-data-overview"
+    ),
     "test_results": "https://infohub.nyced.org/reports/academics/test-results",
-    "other_reports": "https://infohub.nyced.org/reports/students-and-schools/school-quality/"
-                     "information-and-data-overview"
+    "other_reports": (
+        "https://infohub.nyced.org/reports/students-and-schools/school-quality/"
+        "information-and-data-overview"
+    )
 }
 
-EXCLUDED_PATTERNS = ["quality-review", "nyc-school-survey", "signout", "signin", "login", "logout"]
 
-
-# -------------------- NYCInfoHubScraper Class --------------------
-class NYCInfoHubScraper:
-    # Define categories for organizing downloaded Excel files
-    CATEGORIES = {
-        "graduation": ["graduation", "cohort"],
-        "attendance": ["attendance", "chronic", "absentee"],
-        "demographics": ["demographics", "snapshot"],
-        "test_results": ["test", "results", "regents", "ela", "english language arts", "math", "mathematics"],
-        "other_reports": [] # Default category  
-    }
-
-    def __init__(self, base_dir=None, data_dir=None, hash_dir=None, log_dir=None):
-        # Initialize directories
-        self._base_dir = base_dir or os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        self._data_dir = data_dir or os.path.join(self._base_dir, "data")
-        self._hash_dir = hash_dir or os.path.join(self._base_dir, "hashes")
-        self._log_dir = log_dir or os.path.join(self._base_dir, "logs")
-
-        # Re-create directories if needed
+# -------------------- FileManager --------------------
+class FileManager:
+    def __init__(self, data_dir, hash_dir):
+        self._data_dir = data_dir
+        self._hash_dir = hash_dir
         os.makedirs(self._data_dir, exist_ok=True)
         os.makedirs(self._hash_dir, exist_ok=True)
-        os.makedirs(self._log_dir, exist_ok=True)
 
-        # Configure Selenium driver
+    def categorize_file(self, file_name: str, categories: dict) -> str:
+        name_lower = file_name.lower()
+        for category, keywords in categories.items():
+            if any(k in name_lower for k in keywords):
+                return category
+        return "other_reports"
+
+    def get_save_path(self, category: str, file_name: str) -> str:
+        category_dir = os.path.join(self._data_dir, category)
+        os.makedirs(category_dir, exist_ok=True)
+        return os.path.join(category_dir, file_name)
+
+    def get_hash_path(self, category: str, file_name: str) -> str:
+        category_hash_dir = os.path.join(self._hash_dir, category)
+        os.makedirs(category_hash_dir, exist_ok=True)
+        return os.path.join(category_hash_dir, f"{file_name}.hash")
+
+    def file_has_changed(self, hash_path: str, new_hash: str) -> bool:
+        if not os.path.exists(hash_path):
+            return True
+        with open(hash_path, "r") as hf:
+            old_hash = hf.read().strip()
+        return old_hash != new_hash
+
+    def save_file(self, save_path: str, content: bytes):
+        with open(save_path, "wb") as f:
+            f.write(content)
+        logging.info(f"✅ Saved file: {save_path}")
+
+    def save_hash(self, hash_path: str, hash_value: str):
+        with open(hash_path, "w") as hf:
+            hf.write(hash_value)
+        logging.info(f"🆕 Hash updated: {hash_path}")
+
+
+# -------------------- BaseScraper (Abstract) --------------------
+class BaseScraper(ABC):
+    def __init__(self):
         self._driver = self.configure_driver()
-
-        # Create an async HTTP client with concurrency limits
         self._session = httpx.AsyncClient(
-            http2=True, limits=httpx.Limits(max_connections=80, max_keepalive_connections=40),
+            http2=True,
+            limits=httpx.Limits(max_connections=80, max_keepalive_connections=40),
             timeout=5
         )
 
+    @property
+    def driver(self):
+        """
+        Expose the private `_driver` so tests that do
+        patching can still access it as test_scraper.driver.
+        """
+        return self._driver
+
+    @property
+    def session(self):
+        """
+        Same for `_session`: exposing publicly for test patching.
+        """
+        return self._session
+
     def configure_driver(self):
-        """Configure Selenium WebDriver (Chrome)."""
         logging.info("Starting WebDriver configuration...")
-        
         options = webdriver.ChromeOptions()
         options.add_argument("--headless")
         options.add_argument("--no-sandbox")
@@ -82,9 +122,7 @@ class NYCInfoHubScraper:
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-extensions")
         options.add_argument("--disable-plugins-discovery")
-        logging.info("Chrome options set (headless, etc.).")
 
-        # Check if CHROME_DRIVER_PATH is set
         chrome_path = os.getenv("CHROME_DRIVER_PATH", "")
         if chrome_path:
             logging.info(f"Using custom ChromeDriver path: {chrome_path}")
@@ -93,54 +131,130 @@ class NYCInfoHubScraper:
             logging.info("Using system ChromeDriver from PATH.")
             driver = webdriver.Chrome(options=options)
 
-        # Optionally set a page load timeout so we don't get stuck too long
         driver.set_page_load_timeout(60)
-        logging.info("Page load timeout set to 60 seconds.")
-
         logging.info("WebDriver configured successfully.")
         return driver
 
-    
+    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
+    async def download_excel(self, url: str):
+        try:
+            async with self._session.stream("GET", url, timeout=10) as resp:
+                if resp.status_code == 200:
+                    chunks = []
+                    async for chunk in resp.aiter_bytes(chunk_size=CHUNK_SIZE):
+                        chunks.append(chunk)
+                    return url, b"".join(chunks)
+                else:
+                    logging.error(f"❌ Download failed {resp.status_code}: {url}")
+                    return url, None
+        except Exception as e:
+            logging.error(f"❌ Error streaming {url}: {type(e).__name__} - {e}", exc_info=True)
+            return url, None
+
+    async def concurrent_fetch(self, urls):
+        tasks = [self.download_excel(u) for u in urls]
+        results = {}
+        for coro in tqdm(
+            asyncio.as_completed(tasks),
+            total=len(tasks),
+            desc="📥 Downloading Excel Files"
+        ):
+            url, content = await coro
+            if content:
+                results[url] = content
+        return results
+
+    @staticmethod
+    def compute_file_hash(content: bytes) -> str:
+        hasher = hashlib.sha256()
+        hasher.update(content)
+        return hasher.hexdigest()
+
+    def parallel_hashing(self, files_map: dict) -> dict:
+        results = {}
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            future_to_url = {
+                executor.submit(self.compute_file_hash, content): url
+                for url, content in files_map.items()
+            }
+            for future in tqdm(
+                concurrent.futures.as_completed(future_to_url),
+                total=len(future_to_url),
+                desc="🔑 Computing Hashes"
+            ):
+                url = future_to_url[future]
+                try:
+                    results[url] = future.result()
+                except Exception as e:
+                    logging.error(f"❌ Error hashing {url}: {e}")
+        return results
+
+    @abstractmethod
+    async def scrape_data(self):
+        pass
+
+    async def close(self):
+        if self._driver:
+            self._driver.quit()
+            self._driver = None
+            logging.info("WebDriver closed.")
+        try:
+            await self._session.aclose()
+        except Exception as e:
+            logging.error(f"❌ Error closing session: {e}")
+        finally:
+            logging.info("✅ Scraping complete")
+
+
+# -------------------- NYCInfoHubScraper --------------------
+class NYCInfoHubScraper(BaseScraper):
+    CATEGORIES = {
+        "graduation": ["graduation", "cohort"],
+        "attendance": ["attendance", "chronic", "absentee"],
+        "demographics": ["demographics", "snapshot"],
+        "test_results": ["test", "results", "regents", "ela", "english language arts", "math", "mathematics"],
+        "other_reports": []
+    }
+
+    def __init__(self, base_dir=None, data_dir=None, hash_dir=None, log_dir=None):
+        super().__init__()
+        script_dir = os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd()
+        self._base_dir = base_dir or os.path.join(script_dir, "..")
+        self._data_dir = data_dir or os.path.join(self._base_dir, "data")
+        self._hash_dir = hash_dir or os.path.join(self._base_dir, "hashes")
+        self._log_dir = log_dir or os.path.join(self._base_dir, "logs")
+
+        os.makedirs(self._log_dir, exist_ok=True)
+        self._file_manager = FileManager(self._data_dir, self._hash_dir)
+
+        logging.info(f"Data directory: {self._data_dir}")
+        logging.info(f"Hash directory: {self._hash_dir}")
+        logging.info(f"Log directory: {self._log_dir}")
+
+    # Expose a categorize_file() method so your test_categorize_file passes:
+    def categorize_file(self, file_name: str) -> str:
+        return self._file_manager.categorize_file(file_name, self.CATEGORIES)
+
     def should_skip_link(self, href: str) -> bool:
-        """
-        Returns True if href should be skipped based on anchor fragments
-        or the EXCLUDED_PATTERNS list.
-        """
         if not href:
             return True
-
         parsed = urlparse(href)
-
-        # Skip anchor fragment links
         if parsed.fragment:
             return True
-
-        # Check for excluded substrings (case-insensitive)
-        href_lower = href.lower()
-        for pattern in EXCLUDED_PATTERNS:
-            if pattern in href_lower:
-                return True
-
-        # If none of the skip conditions were met, return False => don't skip
-        return False
+        lower_href = href.lower()
+        return any(pattern in lower_href for pattern in EXCLUDED_PATTERNS)
 
     async def discover_relevant_subpages(self, url, depth=1, visited=None):
-        """
-        Loads page in Selenium, finds <a> tags that match SUB_PAGE_PATTERN.
-        Recursively discover up to 'depth' levels.
-        """
         if visited is None:
             visited = set()
         if url in visited:
             return set()
-        visited.add(url)
 
+        visited.add(url)
         discovered_links = set()
         try:
             self._driver.get(url)
-            WebDriverWait(self._driver, 5).until(
-                EC.presence_of_element_located((By.TAG_NAME, "a"))
-            )
+            WebDriverWait(self._driver, 5).until(EC.presence_of_element_located((By.TAG_NAME, "a")))
         except Exception as e:
             logging.error(f"❌ Error loading {url}: {e}")
             return discovered_links
@@ -148,16 +262,11 @@ class NYCInfoHubScraper:
         anchors = self._driver.find_elements(By.TAG_NAME, "a")
         for a in anchors:
             href = a.get_attribute("href")
-            # Uses skip check to avoid unnecessary processing and quickly verify which links to skip
             if self.should_skip_link(href):
-                logging.debug(f"Skipping link: {href}")
                 continue
-
-            # If pass all skip checks and matches subpage pattern, add to discovered set
             if SUB_PAGE_PATTERN.match(href):
                 discovered_links.add(href)
 
-        # Recurse if depth > 1
         if depth > 1:
             for link in list(discovered_links):
                 sub_links = await self.discover_relevant_subpages(link, depth - 1, visited)
@@ -166,60 +275,42 @@ class NYCInfoHubScraper:
         return discovered_links
 
     async def scrape_page_links(self, url, visited=None):
-        """
-        Extract ONLY Excel file links from a single page, using:
-        1) visited set to skip duplicates
-        2) quick pre-filter (endswith Excel extension)
-        3) year check (keep if any year >= 2018 or no year found)
-        """
         if visited is None:
-            visited = set()  # if not passed, we'll have a page-level visited set
+            visited = set()
 
         valid_links = []
         try:
             self._driver.get(url)
-            WebDriverWait(self._driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, "a"))
-            )
+            WebDriverWait(self._driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "a")))
         except Exception as e:
             logging.error(f"❌ Error waiting for page load on {url}: {e}")
-            return valid_links  # return empty if the page failed
+            return valid_links
 
         anchors = self._driver.find_elements(By.TAG_NAME, "a")
         for a in anchors:
             href = a.get_attribute("href")
-            # Skip if already visited
             if not href or href in visited:
                 continue
+
             visited.add(href)
-            # Pre-filter: If the link doesn't end with .xls, .xlsx, or .xlsb, skip quickly
+
             if not href.lower().endswith(EXCEL_FILE_EXTENSIONS):
                 continue
-            # Year-based filter using regex - find all '20xx' occurrences in the link
+
             found_years = YEAR_PATTERN.findall(href)
             if found_years:
-                # parse them as integers
-                parsed_years = [int(y) for y in found_years]
-                # if none are >= 2018, skip
-                if not any(y >= 2018 for y in parsed_years):
-                    logging.debug(f"Skipping link; all years < 2018: {href}")
+                years = [int(y) for y in found_years]
+                if not any(y >= 2018 for y in years):
                     continue
             else:
-                logging.debug(f"Skipping link; no recognized year: {href}")
                 continue
 
             valid_links.append(href)
 
-        logging.info(f"🔗 Found {len(valid_links)} valid Excel links on {url} after filtering.")
+        logging.info(f"🔗 Found {len(valid_links)} valid Excel links on {url}.")
         return valid_links
 
     async def scrape_excel_links(self):
-        """
-        Hybrid approach:
-         1) Start with known pages in REPORT_URLS
-         2) Discover sub-pages matching SUB_PAGE_PATTERN
-         3) Collect Excel links from each discovered sub-page
-        """
         discovered_pages = set()
         base_urls = set(REPORT_URLS.values())
 
@@ -238,123 +329,33 @@ class NYCInfoHubScraper:
         logging.info(f"📊 Total unique Excel links found: {len(excel_links)}")
         return list(excel_links)
 
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
-    async def download_excel(self, url):
-        """
-        Downloads an Excel file asynchronously using stream mode.
-        Streams in chunks to avoid loading very large files entirely in memory.
-        Returns (url, content) if successful, or (url, None) otherwise.
-        """
-        try:
-            async with self._session.stream("GET", url, timeout=10) as resp:
-                if resp.status_code == 200:
-                    # Accumulate chunks in memory (still better than reading all at once)
-                    chunks = []
-                    async for chunk in resp.aiter_bytes(chunk_size=CHUNK_SIZE):
-                        chunks.append(chunk)
-                    content = b"".join(chunks)
-                    
-                    return url, content
-                else:
-                    logging.error(f"❌ Download failed {resp.status_code}: {url}")
-                    return url, None
-        except Exception as e:
-            logging.error(f"❌ Error streaming {url}: {type(e).__name__} - {e}", exc_info=True)
-        return url, None
-
-    async def concurrent_fetch(self, urls):
-        """
-        Download Excel files concurrently (async + httpx).
-        Returns dict {url: content} for successful downloads.
-        """
-        tasks = [self.download_excel(u) for u in urls]
-        results = {}
-        for coro in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="📥 Downloading Excel Files"):
-            url, content = await coro
-            if content:
-                results[url] = content
-        return results
-
-    @staticmethod
-    def compute_file_hash(content):
-        """Compute SHA-256 hash of file content (CPU-bound)."""
-        hasher = hashlib.sha256()
-        hasher.update(content)
-        return hasher.hexdigest()
-    
-    def parallel_hashing(self, files_map):
-        """
-        Use ProcessPoolExecutor to hash all file contents in parallel (one per CPU core).
-        Returns a dict: {url: hash_value}.
-        """
-        results = {}
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            future_to_url = {
-                executor.submit(self.compute_file_hash, content): url
-                for url, content in files_map.items()
-            }
-
-            for future in tqdm(concurrent.futures.as_completed(future_to_url),
-                               total=len(future_to_url), desc="🔑 Computing Hashes"):
-                url = future_to_url[future]
-                try:
-                    hash_value = future.result()
-                    results[url] = hash_value
-                except Exception as e:
-                    logging.error(f"❌ Error hashing {url}: {e}")
-        return results
-
-    def categorize_file(self, file_name):
-        """Determine the category for the file name."""
-        name_lower = file_name.lower()
-        for category, keywords in self.CATEGORIES.items():
-            if any(k in name_lower for k in keywords):
-                return category
-        return "other_reports"
-
-    def save_file(self, url, content, new_hash):
-        """
-        Save the file to disk only if it differs from the existing hash.
-        """
+    def save_file(self, url: str, content: bytes, new_hash: str):
         file_name = os.path.basename(url)
-        category = self.categorize_file(file_name)
+        category = self._file_manager.categorize_file(file_name, self.CATEGORIES)
 
-        save_path = os.path.join(self._data_dir, category, file_name)
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        save_path = self._file_manager.get_save_path(category, file_name)
+        hash_path = self._file_manager.get_hash_path(category, file_name)
 
-        hash_path = os.path.join(self._hash_dir, category, f"{file_name}.hash")
-        os.makedirs(os.path.dirname(hash_path), exist_ok=True)
-
-        old_hash = None
-        if os.path.exists(hash_path):
-            with open(hash_path, "r") as hf:
-                old_hash = hf.read().strip()
-
-        if old_hash == new_hash:
+        if not self._file_manager.file_has_changed(hash_path, new_hash):
             logging.info(f"🔄 No changes detected: {file_name}. Skipping save.")
             return
 
-        with open(save_path, "wb") as f:
-            f.write(content)
-        logging.info(f"✅ Saved file: {save_path}")
+        self._file_manager.save_file(save_path, content)
+        self._file_manager.save_hash(hash_path, new_hash)
 
-        with open(hash_path, "w") as hf:
-            hf.write(new_hash)
-        logging.info(f"🆕 Hash updated: {hash_path}")
+    async def scrape_data(self):
+        excel_links = await self.scrape_excel_links()
+        if not excel_links:
+            logging.info("No Excel links found.")
+            return
 
-    async def close(self):
-        """Close Selenium and the async httpx session."""
-        # Close the WebDriver
-        if self._driver:
-            self._driver.quit()
-            self._driver = None
-            logging.info("WebDriver closed.")
+        files_map = await self.concurrent_fetch(excel_links)
+        if not files_map:
+            logging.info("No files downloaded.")
+            return
 
-        # Close the HTTPX session
-        try:
-            await self._session.aclose()
-        except Exception as e:
-            logging.error(f"❌ Error closing session: {e}")
-        finally:
-            logging.info("✅ Scraping complete")
-
+        hash_results = self.parallel_hashing(files_map)
+        for url, content in files_map.items():
+            new_hash = hash_results.get(url)
+            if new_hash:
+                self.save_file(url, content, new_hash)

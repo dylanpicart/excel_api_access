@@ -26,6 +26,18 @@ def test_categorize_file():
     assert scraper.categorize_file("snapshot_demographics_2023.xlsb") == "demographics"
     assert scraper.categorize_file("random_file.xls") == "other_reports"
 
+def test_compute_file_hash():
+    test_data = b"hello"
+    expected_hash = hashlib.sha256(test_data).hexdigest()
+    actual_hash = NYCInfoHubScraper.compute_file_hash(test_data)
+    assert actual_hash == expected_hash, "Hash does not match expected SHA-256"
+
+def test_categorize_file():
+    # Now calls the method that delegates to FileManager internally
+    scraper = NYCInfoHubScraper()
+    assert scraper.categorize_file("my_graduation_report_2024.xlsx") == "graduation"
+    assert scraper.categorize_file("snapshot_demographics_2023.xlsb") == "demographics"
+    assert scraper.categorize_file("random_file.xls") == "other_reports"
 
 @pytest.mark.asyncio
 async def test_discover_relevant_subpages(test_scraper):
@@ -142,31 +154,20 @@ def test_parallel_hashing():
 
 
 def test_save_file(tmp_path):
-    """
-    Test the save_file method to ensure it writes new content
-    and updates hash if different from the old one.
-    """
+    # Leverages the updated paths & FileManager from excel_scraper.py
     scraper = NYCInfoHubScraper(
-    # Override the data and hash directories for the test
-    data_dir=str(tmp_path / "data"),
-    hash_dir=str(tmp_path / "hashes")
+        data_dir=str(tmp_path / "data"),
+        hash_dir=str(tmp_path / "hashes")
     )
-
-    # We can do it by monkeypatching or just dynamically passing a path, 
-    # but here we just call it as is if the code references DATA_DIR/HASH_DIR as class constants.
-
     test_url = "http://example.com/graduation_report_2022.xlsx"
     test_content = b"New report content"
     new_hash = hashlib.sha256(test_content).hexdigest()
 
-    # Call method
     scraper.save_file(test_url, test_content, new_hash)
 
-    # Check that file is actually saved
     expected_file_path = tmp_path / "data" / "graduation" / "graduation_report_2022.xlsx"
     assert expected_file_path.is_file(), "Excel file not saved."
 
-    # Check that the hash file is created and contains the correct hash
     expected_hash_path = tmp_path / "hashes" / "graduation" / "graduation_report_2022.xlsx.hash"
     assert expected_hash_path.is_file(), "Hash file not created."
     with open(expected_hash_path, "r") as hf:
