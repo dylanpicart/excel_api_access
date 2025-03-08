@@ -160,7 +160,7 @@ Depending on where you prefer to run the scraper, you can pick one or both. Each
 
 project_root/
 │
-├── **init**.py             # Package initializer
+├── __init__.py             # Package initializer
 ├── .github                 # Workflow CI/CD integration
 ├── .gitignore              # Ignore logs, venv, data, and cache files
 ├── .env                    # Environment variables (excluded from version control)
