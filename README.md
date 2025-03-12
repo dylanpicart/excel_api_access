@@ -157,8 +157,6 @@ Depending on where you prefer to run the scraper, you can pick one or both. Each
 
 ---
 
----
-
 ## Directory Structure
 
 ```text
