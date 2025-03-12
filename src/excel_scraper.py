@@ -14,8 +14,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from abc import ABC, abstractmethod
 from tenacity import retry, stop_after_attempt, wait_fixed
 from tqdm import tqdm
-# For security checks:
-# (ClamAV must also be installed & running)
 import pyclamd
 import magic
 
