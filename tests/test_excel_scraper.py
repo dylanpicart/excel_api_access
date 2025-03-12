@@ -3,7 +3,8 @@
 import pytest
 import hashlib
 from unittest.mock import patch, MagicMock
-from src.excel_scraper import NYCInfoHubScraper
+from src.excel_scraper import NYCInfoHubScraper, SecurityManager
+import platform
 
 def test_compute_file_hash():
     """
@@ -94,6 +95,29 @@ async def test_download_excel_success(test_scraper):
         mock_stream_call.assert_called_once()
         mock_scan.assert_called_once_with(fake_excel_content)
         mock_mime.assert_called_once_with(fake_excel_content)
+        
+def test_skip_windows_scan_true():
+    manager = SecurityManager(skip_windows_scan=True)
+
+    # Mock platform.system() to return 'Windows'
+    with patch.object(platform, 'system', return_value='Windows'):
+        status, message = manager.scan_for_viruses(b"FakeExcelData")
+        assert status == "OK"
+        assert "Skipping AV check on Windows" in message
+
+def test_skip_windows_scan_false():
+    manager = SecurityManager(skip_windows_scan=False)
+
+    # Mock platform.system() to return 'Windows'
+    # We confirm it *doesn't* short-circuit and tries to do normal scanning
+    # Since there's no real ClamAV, you might see an 'ERROR' or something
+    # unless you mock the clamd calls as well. For illustration:
+    with patch.object(platform, 'system', return_value='Windows'), \
+    patch("pyclamd.ClamdUnixSocket", side_effect=Exception("No daemon")):
+        
+        status, message = manager.scan_for_viruses(b"FakeExcelData")
+        assert status == "ERROR"
+        assert "No daemon" in message
 
 @pytest.mark.asyncio
 async def test_download_excel_virus_found(test_scraper):

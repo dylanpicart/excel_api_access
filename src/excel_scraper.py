@@ -16,6 +16,7 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 from tqdm import tqdm
 import pyclamd
 import magic
+import platform
 
 load_dotenv()
 logging.info(f"CHROMEDRIVER_PATH: {os.environ.get('CHROMEDRIVER_PATH')}")
@@ -94,14 +95,18 @@ class SecurityManager:
     """
     Encapsulates file validation logic, including virus scanning
     (ClamAV via python-clamd) and MIME-type checks (python-magic).
+    Skips ClamAV scan on Windows by default.
     """
 
-    def __init__(self, clam_socket="/var/run/clamav/clamd.ctl"):
+    def __init__(self, clam_socket="/var/run/clamav/clamd.ctl", skip_windows_scan=True):
         """
         Pass the path to the ClamAV Unix socket file.
         By default, it's often /var/run/clamav/clamd.ctl on Debian/Ubuntu.
+        If using Windows, automatically skips ClamAV scan.
         """
         self._clam_socket = clam_socket
+        self._skip_windows_scan = skip_windows_scan
+
 
     def scan_for_viruses(self, file_bytes: bytes) -> tuple:
         """
@@ -110,8 +115,12 @@ class SecurityManager:
         Possible status_code values:
           - "ERROR": an exception or connection failure occurred
           - "FOUND": virus/malware was detected
-          - "OK": no virus was found
+          - "OK": file is clean or scanning is skipped on Windows
         """
+        if self._skip_windows_scan and platform.system().lower() == "windows":
+            logging.info("Skipping virus scan on Windows.")
+            return ("OK", "Skipping AV check on Windows")
+        
         try:
             cd = pyclamd.ClamdUnixSocket(filename=self._clam_socket)
             result = cd.scan_stream(file_bytes)
@@ -329,8 +338,8 @@ class NYCInfoHubScraper(BaseScraper):
         "other_reports": []
     }
 
-    def __init__(self, base_dir=None, data_dir=None, hash_dir=None, log_dir=None):
-        super().__init__(security_manager=SecurityManager("/var/run/clamav/clamd.ctl"))
+    def __init__(self, base_dir=None, data_dir=None, hash_dir=None, log_dir=None, skip_win_scan=True):
+        super().__init__(security_manager=SecurityManager("/var/run/clamav/clamd.ctl", skip_windows_scan=skip_win_scan))
         script_dir = os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd()
         self._base_dir = base_dir or os.path.join(script_dir, "..")
         self._data_dir = data_dir or os.path.join(self._base_dir, "data")

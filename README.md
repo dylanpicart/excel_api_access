@@ -2,7 +2,7 @@
 
 ## Description
 
-**Excel API Web Scraper** is a Python-based project that automates the process of web scraping, downloading, and storing Excel files from the NYC InfoHub website. It features a **modular, object-oriented** design with built-in **security checks** (virus scanning and MIME-type validation) for downloaded Excel files.
+**Excel API Web Scraper** is a Python-based project that automates the process of web scraping, downloading, and storing Excel files from NYC InfoHub. It features a modular, object-oriented design with built-in **security checks** (virus scanning and MIME-type validation) for downloaded Excel files, **with an option to skip antivirus scans on Windows** if ClamAV isn’t readily available.
 
 ### Highlights
 
@@ -11,8 +11,8 @@
 - **Parallel CPU-bound hashing** with `ProcessPoolExecutor`  
 - **Detailed logging** with a rotating file handler  
 - **Progress tracking** via `tqdm`  
-- **SecurityManager** for virus scanning (ClamAV) and file-type checks  
-- **Refined “only Excel files”** approach, skipping malicious or non-Excel data
+- **SecurityManager** for optional virus scanning (ClamAV) and file-type checks  
+- **Skips ClamAV scanning on Windows** by default, avoiding setup complexities while still functioning seamlessly
 
 ---
 
@@ -37,9 +37,9 @@
    - Uses `ProcessPoolExecutor` to compute SHA-256 hashes in parallel, fully utilizing multi-core CPUs without blocking the async loop.
 
 7. **Security Checks**  
-   - A **SecurityManager** class provides:
-     - **Virus scanning** with ClamAV (in-memory scanning before saving).  
-     - **MIME-type validation** with `python-magic`, ensuring files truly are Excel.
+   - In-memory **virus scanning** with ClamAV (via `pyclamd` or `clamd`)  
+   - **MIME-type validation** with `python-magic`, ensuring files are truly Excel  
+   - **Skip scanning on Windows** by default (see below)
 
 8. **Prevents Redundant Downloads**  
    - Compares new file hashes with stored hashes; downloads only if the file has changed.
@@ -47,6 +47,21 @@
 9. **Progress & Logging**  
    - `tqdm` for progress bars during downloads and hashing.  
    - Detailed logs in `logs/excel_fetch.log` (rotated at 5MB, up to 2 backups).
+
+---
+
+## Windows Antivirus Skipping
+
+By default, **ClamAV scanning** is not performed on **Windows** to avoid environment complexities—ClamAV is primarily a Linux/UNIX daemon. The `SecurityManager` class checks `platform.system()`, and if it’s `Windows`, it **short-circuits** scanning and returns a **clean** status. This behavior can be **overridden** by setting:
+
+```python
+security_manager = SecurityManager(skip_windows_scan=False)
+```
+
+…in which case the code will attempt a normal ClamAV call. To make this work on Windows, you’d typically need:
+
+- **WSL or Docker** to run the ClamAV daemon, or
+- Another setup that exposes a ClamAV socket/port for Python to connect to.
 
 ---
 
@@ -306,6 +321,7 @@ A GitHub Actions workflow is set up in `.github/workflows/ci-cd.yml`. It:
 - **Redundant Downloads**: Prevented by storing file hashes and only updating on changes.
 - **Virus Scan Overhead**: In-memory scanning might add overhead, but ensures security.
 - **Size Limit Errors**: If you see “INSTREAM: Size limit reached” warnings, increase `StreamMaxLength` in `clamd.conf`.
+- **Windows Skipping**: If you can’t run ClamAV natively, the skip mechanism means the scraper still works without throwing errors.
 
 ---
 
