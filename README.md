@@ -165,7 +165,6 @@ Depending on where you prefer to run the scraper, you can pick one or both. Each
 
 project_root/
 │
-├── __init__.py             # Package initializer
 ├── .github                 # Workflow CI/CD integration
 ├── .gitignore              # Ignore logs, venv, data, and cache files
 ├── .env                    # Environment variables (excluded from version control)
@@ -179,6 +178,7 @@ project_root/
 ├── venv_win/               # Windows Virtual Environment (ignored by version control)
 │
 ├── src/
+│   ├── __init__.py         # Package initializer
 │   ├── main.py             # Main scraper script
 │   └── excel_scraper.py    # Web scraping module
 │
