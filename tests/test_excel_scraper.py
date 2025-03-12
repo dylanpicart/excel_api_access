@@ -5,7 +5,6 @@ import hashlib
 from unittest.mock import patch, MagicMock
 from src.excel_scraper import NYCInfoHubScraper
 
-
 def test_compute_file_hash():
     """
     Test the compute_file_hash static method with known data.
@@ -14,7 +13,6 @@ def test_compute_file_hash():
     expected_hash = hashlib.sha256(test_data).hexdigest()
     actual_hash = NYCInfoHubScraper.compute_file_hash(test_data)
     assert actual_hash == expected_hash, "Hash does not match expected SHA-256"
-
 
 def test_categorize_file():
     """
@@ -26,44 +24,23 @@ def test_categorize_file():
     assert scraper.categorize_file("snapshot_demographics_2023.xlsb") == "demographics"
     assert scraper.categorize_file("random_file.xls") == "other_reports"
 
-def test_compute_file_hash():
-    test_data = b"hello"
-    expected_hash = hashlib.sha256(test_data).hexdigest()
-    actual_hash = NYCInfoHubScraper.compute_file_hash(test_data)
-    assert actual_hash == expected_hash, "Hash does not match expected SHA-256"
-
-def test_categorize_file():
-    # Now calls the method that delegates to FileManager internally
-    scraper = NYCInfoHubScraper()
-    assert scraper.categorize_file("my_graduation_report_2024.xlsx") == "graduation"
-    assert scraper.categorize_file("snapshot_demographics_2023.xlsb") == "demographics"
-    assert scraper.categorize_file("random_file.xls") == "other_reports"
-
 @pytest.mark.asyncio
 async def test_discover_relevant_subpages(test_scraper):
     """
     Example integration-ish test to verify discover_relevant_subpages.
-    In real usage, you might mock the driver's behavior 
+    In real usage, you might mock the driver's behavior
     or use a local test page with known links.
     """
-    # If you have a test page with known sub-links that match the SUB_PAGE_PATTERN:
     test_url = "https://example.com/testpage"
-    
-    # This call will likely return an empty set (since example.com is not guaranteed to have matches).
-    # In real usage, you’d use a mock or local test server.
     discovered = await test_scraper.discover_relevant_subpages(test_url, depth=1)
-    
     assert isinstance(discovered, set)
-    # Optionally check something about the discovered set, if you had a controlled test page:
-    # assert "https://example.com/testpage/reports/students-and-schools/school-quality" in discovered
-
+    # Additional assertions if you had a known test page
 
 @pytest.mark.asyncio
 async def test_scrape_page_links(test_scraper):
     """
     Demonstrates how to mock Selenium calls to test scrape_page_links without an actual webpage.
     """
-    # Mock the find_elements call to return a list of anchor-like mocks
     mock_element_1 = MagicMock()
     mock_element_1.get_attribute.return_value = "http://example.com/data_2021.xlsx"
     
@@ -73,8 +50,6 @@ async def test_scrape_page_links(test_scraper):
     with patch.object(test_scraper.driver, 'get') as mock_get, \
          patch.object(test_scraper.driver, 'find_elements', return_value=[mock_element_1, mock_element_2]) as mock_find:
         
-        # Because the second link ends with .pdf, it should be filtered out
-        # The first link is .xlsx with a year >= 2018
         valid_links = await test_scraper.scrape_page_links("http://example.com")
         
         assert len(valid_links) == 1
@@ -82,9 +57,12 @@ async def test_scrape_page_links(test_scraper):
         mock_get.assert_called_once()
         mock_find.assert_called_once()
 
-
 @pytest.mark.asyncio
 async def test_download_excel_success(test_scraper):
+    """
+    Test the download_excel method in a happy-path scenario,
+    including virus scan "OK" and MIME "Excel" results.
+    """
     fake_excel_content = b"FakeExcelData"
     url = "http://example.com/test.xls"
 
@@ -102,20 +80,128 @@ async def test_download_excel_success(test_scraper):
         async def __aexit__(self, exc_type, exc_val, exc_tb):
             pass
 
-    # This is a *regular* function, not async, returning an async context manager
-    def mock_stream(method, url, timeout=10):
-        # You could pass 'method', 'url', 'timeout' to the constructor if needed
+    def mock_stream(method, _url, timeout=10):
         return MockResponseContext(200, fake_excel_content)
 
-    # Patch session.stream so that calling it returns our context manager object
-    with patch.object(test_scraper.session, 'stream', side_effect=mock_stream):
+    with patch.object(test_scraper.session, 'stream', side_effect=mock_stream) as mock_stream_call, \
+         patch.object(test_scraper._security_manager, 'scan_for_viruses', return_value=("OK","No malware detected.")) as mock_scan, \
+         patch.object(test_scraper._security_manager, 'is_excel_file', return_value=True) as mock_mime:
+
         returned_url, content = await test_scraper.download_excel(url)
         assert returned_url == url
         assert content == fake_excel_content
 
+        mock_stream_call.assert_called_once()
+        mock_scan.assert_called_once_with(fake_excel_content)
+        mock_mime.assert_called_once_with(fake_excel_content)
+
+@pytest.mark.asyncio
+async def test_download_excel_virus_found(test_scraper):
+    """
+    Test the scenario where ClamAV detects a virus.
+    The method should skip returning file content (return None).
+    """
+    fake_excel_content = b"FakeInfectedData"
+    url = "http://example.com/infected.xls"
+
+    class MockResponseContext:
+        def __init__(self, status_code, content):
+            self.status_code = status_code
+            self._content = content
+
+        async def aiter_bytes(self, chunk_size=65536):
+            yield self._content
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    def mock_stream(method, _url, timeout=10):
+        return MockResponseContext(200, fake_excel_content)
+
+    with patch.object(test_scraper.session, 'stream', side_effect=mock_stream), \
+         patch.object(test_scraper._security_manager, 'scan_for_viruses', return_value=("FOUND","Eicar-Test-Signature")), \
+         patch.object(test_scraper._security_manager, 'is_excel_file', return_value=True):
+
+        returned_url, content = await test_scraper.download_excel(url)
+        assert returned_url == url
+        assert content is None, "Should skip returning content if virus is found."
+
+@pytest.mark.asyncio
+async def test_download_excel_scan_error(test_scraper):
+    """
+    Test the scenario where virus scanning fails (connection reset, etc.).
+    The method should also skip returning file content, but not label it as a virus.
+    """
+    fake_excel_content = b"FakeExcelData"
+    url = "http://example.com/scan_error.xls"
+
+    class MockResponseContext:
+        def __init__(self, status_code, content):
+            self.status_code = status_code
+            self._content = content
+
+        async def aiter_bytes(self, chunk_size=65536):
+            yield self._content
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    def mock_stream(method, _url, timeout=10):
+        return MockResponseContext(200, fake_excel_content)
+
+    # "ERROR" indicates scanning couldn't complete
+    with patch.object(test_scraper.session, 'stream', side_effect=mock_stream), \
+         patch.object(test_scraper._security_manager, 'scan_for_viruses', return_value=("ERROR","Connection reset by peer")), \
+         patch.object(test_scraper._security_manager, 'is_excel_file', return_value=True):
+
+        returned_url, content = await test_scraper.download_excel(url)
+        assert returned_url == url
+        assert content is None, "Should skip returning content if scan error occurs."
+
+@pytest.mark.asyncio
+async def test_download_excel_not_excel(test_scraper):
+    """
+    Test scenario where virus scan is OK, but MIME check fails.
+    """
+    fake_excel_content = b"FakeButActuallyNotExcel"
+    url = "http://example.com/not_excel.xls"
+
+    class MockResponseContext:
+        def __init__(self, status_code, content):
+            self.status_code = status_code
+            self._content = content
+
+        async def aiter_bytes(self, chunk_size=65536):
+            yield self._content
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    def mock_stream(method, _url, timeout=10):
+        return MockResponseContext(200, fake_excel_content)
+
+    with patch.object(test_scraper.session, 'stream', side_effect=mock_stream), \
+         patch.object(test_scraper._security_manager, 'scan_for_viruses', return_value=("OK","No malware detected.")), \
+         patch.object(test_scraper._security_manager, 'is_excel_file', return_value=False):
+
+        returned_url, content = await test_scraper.download_excel(url)
+        assert returned_url == url
+        assert content is None, "Should skip returning content if it's not recognized as Excel."
 
 @pytest.mark.asyncio
 async def test_download_excel_failure(test_scraper):
+    """
+    Existing test - for a 404 or other HTTP error scenario.
+    """
     def mock_stream_failure(method, url, timeout=10):
         class MockResponse:
             status_code = 404
@@ -127,13 +213,10 @@ async def test_download_excel_failure(test_scraper):
                 pass
         return MockResponse()
 
-
     with patch.object(test_scraper.session, 'stream', side_effect=mock_stream_failure):
         returned_url, content = await test_scraper.download_excel("http://example.com/broken.xls")
         assert returned_url == "http://example.com/broken.xls"
-        # For a 404, your code might return content=None, so verify behavior:
-        assert content is None
-
+        assert content is None, "Should return None on 404"
 
 def test_parallel_hashing():
     """
@@ -152,13 +235,16 @@ def test_parallel_hashing():
     assert results["file1.xlsx"] == expected_hash_file1
     assert results["file2.xlsx"] == expected_hash_file2
 
-
 def test_save_file(tmp_path):
-    # Leverages the updated paths & FileManager from excel_scraper.py
+    """
+    Test the save_file method to ensure it writes new content
+    and updates hash if different from the old one.
+    """
     scraper = NYCInfoHubScraper(
         data_dir=str(tmp_path / "data"),
         hash_dir=str(tmp_path / "hashes")
     )
+
     test_url = "http://example.com/graduation_report_2022.xlsx"
     test_content = b"New report content"
     new_hash = hashlib.sha256(test_content).hexdigest()

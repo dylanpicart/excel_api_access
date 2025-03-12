@@ -14,6 +14,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from abc import ABC, abstractmethod
 from tenacity import retry, stop_after_attempt, wait_fixed
 from tqdm import tqdm
+# For security checks:
+# (ClamAV must also be installed & running)
+import pyclamd
+import magic
 
 load_dotenv()
 logging.info(f"CHROMEDRIVER_PATH: {os.environ.get('CHROMEDRIVER_PATH')}")
@@ -86,17 +90,96 @@ class FileManager:
         with open(hash_path, "w") as hf:
             hf.write(hash_value)
         logging.info(f"🆕 Hash updated: {hash_path}")
+        
+# -------------------- SecurityManager -------------------
+class SecurityManager:
+    """
+    Encapsulates file validation logic, including virus scanning
+    (ClamAV via python-clamd) and MIME-type checks (python-magic).
+    """
+
+    def __init__(self, clam_socket="/var/run/clamav/clamd.ctl"):
+        """
+        Pass the path to the ClamAV Unix socket file.
+        By default, it's often /var/run/clamav/clamd.ctl on Debian/Ubuntu.
+        """
+        self._clam_socket = clam_socket
+
+    def scan_for_viruses(self, file_bytes: bytes) -> tuple:
+        """
+        Returns a tuple (status_code, message).
+
+        Possible status_code values:
+          - "ERROR": an exception or connection failure occurred
+          - "FOUND": virus/malware was detected
+          - "OK": no virus was found
+        """
+        try:
+            cd = pyclamd.ClamdUnixSocket(filename=self._clam_socket)
+            result = cd.scan_stream(file_bytes)
+
+            if not result:
+                # Means no virus found
+                return ("OK", "No malware detected.")
+            else:
+                # Example: { 'stream': ('FOUND', 'Eicar-Test-Signature') }
+                status, virus_name = result.get('stream', ('', ''))
+                if status == "FOUND":
+                    return ("FOUND", virus_name)
+                else:
+                    # Unexpected structure or something else
+                    return ("ERROR", f"Unexpected scan result: {result}")
+        except Exception as e:
+            # Connection reset or other issues
+            return ("ERROR", str(e))
+
+
+    def is_excel_file(self, file_bytes: bytes) -> bool:
+        """
+        Checks if the file's MIME type is recognized as Excel.
+        Possible values:
+          - 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          - 'application/vnd.ms-excel'
+          - 'application/vnd.ms-excel.sheet.binary.macroEnabled.12'
+        """
+        try:
+            mime_type = magic.from_buffer(file_bytes, mime=True)
+            # Partial matching in case of minor variations
+            if any(token in mime_type for token in ["ms-excel", "spreadsheetml.sheet"]):
+                logging.debug(f"✅ MIME check passed: recognized Excel format ({mime_type}).")
+                return True
+            else:
+                logging.error(f"❌ MIME check failed: {mime_type} not recognized as Excel.")
+                return False
+        except Exception as e:
+            logging.error(f"❌ MIME check error: {e}")
+            return False
+
 
 
 # -------------------- BaseScraper (Abstract) --------------------
 class BaseScraper(ABC):
-    def __init__(self):
+    """
+    Abstract base class providing essential web-scraping functionality:
+    - Selenium WebDriver config
+    - Async httpx session
+    - Concurrency, file hashing
+    - (Optional) Security checks delegated to SecurityManager
+    """
+
+    def __init__(self, security_manager=None):
+        """
+        Optionally pass in a custom SecurityManager. If not provided,
+        we'll create a default instance (which does ClamAV + python-magic checks).
+        """
         self._driver = self.configure_driver()
         self._session = httpx.AsyncClient(
             http2=True,
             limits=httpx.Limits(max_connections=80, max_keepalive_connections=40),
             timeout=5
         )
+        # Attach a security manager (virus + MIME checks)
+        self._security_manager = security_manager or SecurityManager()
 
     @property
     def driver(self):
@@ -137,13 +220,45 @@ class BaseScraper(ABC):
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
     async def download_excel(self, url: str):
+        """
+        Downloads an Excel file, then runs security checks
+        (virus scan + MIME check). Returns (url, content) or (url, None).
+        """
         try:
             async with self._session.stream("GET", url, timeout=10) as resp:
                 if resp.status_code == 200:
                     chunks = []
                     async for chunk in resp.aiter_bytes(chunk_size=CHUNK_SIZE):
                         chunks.append(chunk)
-                    return url, b"".join(chunks)
+                    content = b"".join(chunks)
+
+                    # 1) Virus Scan
+                    scan_status, message = self._security_manager.scan_for_viruses(content)
+                    if scan_status == "ERROR":
+                        # Means we failed to connect or scanning failed
+                        logging.error(
+                            f"❌ Virus scan error for {url}: {message} - skipping file (unknown status)."
+                        )
+                        return url, None
+                    elif scan_status == "FOUND":
+                        # Means actual virus was detected
+                        logging.error(
+                            f"❌ Virus/malware found in {url}. Virus name/details: {message}"
+                        )
+                        return url, None
+                    else:
+                        # "OK" => proceed
+                        logging.debug(f"✅ Virus scan passed for {url}: {message}")
+
+                    # 2) MIME-Type Check (example)
+                    if not self._security_manager.is_excel_file(content):
+                        logging.error(f"❌ File not recognized as Excel: {url} - skipping.")
+                        return url, None
+                    else:
+                        logging.debug(f"✅ MIME check passed for {url}.")
+
+                    # If we reach here => file is "clean" & recognized as Excel
+                    return url, content
                 else:
                     logging.error(f"❌ Download failed {resp.status_code}: {url}")
                     return url, None
@@ -217,7 +332,7 @@ class NYCInfoHubScraper(BaseScraper):
     }
 
     def __init__(self, base_dir=None, data_dir=None, hash_dir=None, log_dir=None):
-        super().__init__()
+        super().__init__(security_manager=SecurityManager("/var/run/clamav/clamd.ctl"))
         script_dir = os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd()
         self._base_dir = base_dir or os.path.join(script_dir, "..")
         self._data_dir = data_dir or os.path.join(self._base_dir, "data")
