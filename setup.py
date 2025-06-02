@@ -1,8 +1,8 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="excel_api_access",
-    version="1.0.6",
+    name="nyc_infohub_excel_api_access",
+    version="1.0.8",
     author="Dylan Picart",
     author_email="dylanpicart@mail.adelphi.edu",
     description="A Python scraper for downloading Excel datasets from NYC InfoHub.",
@@ -34,5 +34,5 @@ setup(
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.8',
-    entry_points={'console_scripts': ['nyc-excel-scraper = excel_scraper:run_scraper']}
+    entry_points={'console_scripts': ['nyc-infohub-scraper = excel_scraper:run_scraper']}
 )

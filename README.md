@@ -2,7 +2,7 @@
 
 ## Description
 
-**Excel API Web Scraper** is a Python-based project that automates the process of web scraping, downloading, and storing Excel files from NYC InfoHub. It features a modular, object-oriented design with built-in **security checks** (virus scanning and MIME-type validation) for downloaded Excel files, **with an option to skip antivirus scans on Windows** if ClamAV isn’t readily available.
+**Excel API Web Scraper** is a Python-based project/package that automates the process of web scraping, downloading, and storing Excel files from NYC InfoHub. It features a modular, object-oriented design with built-in **security checks** (virus scanning and MIME-type validation) for downloaded Excel files, **with an option to skip antivirus scans on Windows** if ClamAV isn’t readily available.
 
 ### Highlights
 
@@ -62,6 +62,35 @@ security_manager = SecurityManager(skip_windows_scan=False)
 
 - **WSL or Docker** to run the ClamAV daemon, or
 - Another setup that exposes a ClamAV socket/port for Python to connect to.
+
+---
+
+## Package
+
+[![PyPI version](https://badge.fury.io/py/nyc_infohub_excel_api_access.svg)](https://pypi.org/project/nyc_infohub_excel_api_access/)
+
+**Version: 1.0.8**
+
+A Python package for scraping and downloading Excel datasets from NYC InfoHub using Selenium, httpx, asyncio, and virus/MIME validation is available.
+
+---
+
+## 📦 Installation
+
+```bash
+pip install nyc_infohub_excel_api_access
+```
+
+---
+
+## 🚀 Usage
+
+Run from the command line:
+```bash
+nyc-infohub-scraper
+```
+
+Installing this package gives you access to the CLI tool nyc-infohub-scraper, which launches the scraper pipeline from the terminal with a single command.
 
 ---
 
@@ -320,6 +349,8 @@ A GitHub Actions workflow is set up in `.github/workflows/ci-cd.yml`. It:
 - **Connection Pooling**: Addressed by a persistent `httpx.AsyncClient`.
 - **Redundant Downloads**: Prevented by storing file hashes and only updating on changes.
 - **Virus Scan Overhead**: In-memory scanning might add overhead, but ensures security.
+- **Virus Scan Failures**: If ClamAV is unavailable or fails (e.g., due to socket errors or size limits), the scraper falls back to MIME-type validation for Excel files instead of discarding them.
+- **Fallback Traceability**: All skipped or MIME-only approved files are logged in `quarantine.log` with timestamp, reason, MIME type, and file size for audit and debugging.
 - **Size Limit Errors**: If you see “INSTREAM: Size limit reached” warnings, increase `StreamMaxLength` in `clamd.conf`.
 - **Windows Skipping**: If you can’t run ClamAV natively, the skip mechanism means the scraper still works without throwing errors.
 
