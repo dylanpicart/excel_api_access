@@ -3,6 +3,7 @@ name: CI-CD  # CI/CD workflow
 on:
   push:
     branches: [ "main" ]      # Trigger on pushes to 'main'
+    tags: [ "*" ]          # Trigger on version tags like v1.0.0
   pull_request:
     branches: [ "main" ]      # Trigger on PRs targeting 'main'
 
