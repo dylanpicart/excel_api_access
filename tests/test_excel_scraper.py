@@ -157,7 +157,7 @@ async def test_download_excel_virus_found(test_scraper):
 async def test_download_excel_scan_error(test_scraper):
     """
     Test the scenario where virus scanning fails (connection reset, etc.).
-    The method should also skip returning file content, but not label it as a virus.
+    If MIME is valid, content should still be returned (fallback behavior).
     """
     fake_excel_content = b"FakeExcelData"
     url = "http://example.com/scan_error.xls"
@@ -179,14 +179,15 @@ async def test_download_excel_scan_error(test_scraper):
     def mock_stream(method, _url, timeout=10):
         return MockResponseContext(200, fake_excel_content)
 
-    # "ERROR" indicates scanning couldn't complete
+    # "ERROR" means scanning failed, but MIME check passes
     with patch.object(test_scraper.session, 'stream', side_effect=mock_stream), \
-         patch.object(test_scraper._security_manager, 'scan_for_viruses', return_value=("ERROR","Connection reset by peer")), \
+         patch.object(test_scraper._security_manager, 'scan_for_viruses', return_value=("ERROR", "Connection reset")), \
          patch.object(test_scraper._security_manager, 'is_excel_file', return_value=True):
 
         returned_url, content = await test_scraper.download_excel(url)
         assert returned_url == url
-        assert content is None, "Should skip returning content if scan error occurs."
+        assert content == fake_excel_content  # ✅ New expected behavior
+
 
 @pytest.mark.asyncio
 async def test_download_excel_not_excel(test_scraper):

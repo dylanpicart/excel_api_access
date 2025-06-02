@@ -40,16 +40,19 @@ async def test_main_scraper_flow():
     # IMPORTANT: Patch the methods on the actual module path where
     # `NYCInfoHubScraper` is defined and imported by main.py—i.e. "src.excel_scraper"
     with patch("src.excel_scraper.NYCInfoHubScraper.scrape_excel_links", return_value=mock_excel_links), \
-         patch("src.excel_scraper.NYCInfoHubScraper.concurrent_fetch", return_value=mock_files_map), \
-         patch("src.excel_scraper.NYCInfoHubScraper.parallel_hashing", return_value=mock_hashes), \
-         patch("src.excel_scraper.NYCInfoHubScraper.save_file") as mock_save:
+        patch("src.excel_scraper.NYCInfoHubScraper.concurrent_fetch", return_value=mock_files_map), \
+        patch("src.excel_scraper.NYCInfoHubScraper.parallel_hashing", return_value=mock_hashes), \
+        patch("src.excel_scraper.NYCInfoHubScraper.save_file") as mock_save:
 
         exit_code = await main_entrypoint()
 
-        # Verify main() completed successfully
+        # ✅ Check main ran successfully
         assert exit_code == 0, "Expected main to return 0 on success"
 
-        # Check calls to save_file
+        # ✅ NEW: Confirm the mock was even called
+        assert mock_save.called, "save_file was not called at all"
+
+        # ✅ Check expected calls
         mock_save.assert_any_call(
             "http://example.com/attendance_2021.xlsx",
             b"fake attendance bytes",
@@ -61,3 +64,4 @@ async def test_main_scraper_flow():
             "hash2"
         )
         assert mock_save.call_count == 2, "Expected two calls to save_file"
+
