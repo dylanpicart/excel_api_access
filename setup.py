@@ -4,7 +4,7 @@ setup(
     name="excel_api_access",
     version="1.0.5",
     author="Dylan Picart",
-    author_email="dpicart@partnershipwithchildren.org",
+    author_email="dylanpicart@mail.adelphi.edu",
     description="A Python scraper for downloading Excel datasets from NYC InfoHub.",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
@@ -34,4 +34,5 @@ setup(
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.8',
+    entry_points={'console_scripts': ['nyc-excel-scraper = excel_scraper:run_scraper']}
 )

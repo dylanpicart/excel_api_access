@@ -6,8 +6,9 @@ __pycache__/
 *.so
 
 # Ignore virtual environments
-venv_win/
-venv_wsl/
+.venv_win/
+.venv_wsl/
+.venv/
 venv/
 
 # Ignore environment variables

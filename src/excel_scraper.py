@@ -7,6 +7,8 @@ import re
 import concurrent.futures
 from dotenv import load_dotenv
 from urllib.parse import urlparse
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -108,37 +110,45 @@ class SecurityManager:
         self._skip_windows_scan = skip_windows_scan
 
 
-    def scan_for_viruses(self, file_bytes: bytes) -> tuple:
+    def scan_for_viruses(self, file_bytes: bytes, retry_once=True) -> tuple:
         """
-        Returns a tuple (status_code, message).
-
-        Possible status_code values:
-          - "ERROR": an exception or connection failure occurred
-          - "FOUND": virus/malware was detected
-          - "OK": file is clean or scanning is skipped on Windows
+        Returns (status, message)
+        - "OK": Clean or skipped
+        - "FOUND": Virus detected
+        - "ERROR": ClamAV not available or failed
         """
         if self._skip_windows_scan and platform.system().lower() == "windows":
             logging.info("Skipping virus scan on Windows.")
-            return ("OK", "Skipping AV check on Windows")
-        
-        try:
+            return "OK", "Skipping AV check on Windows"
+
+        # Internal method to handle the ClamAV scan that allows retries in the event of a connection reset
+        def _try_scan():
             cd = pyclamd.ClamdUnixSocket(filename=self._clam_socket)
-            result = cd.scan_stream(file_bytes)
+            return cd.scan_stream(file_bytes)
+
+        try:
+            result = _try_scan()
 
             if not result:
-                # Means no virus found
-                return ("OK", "No malware detected.")
+                return "OK", "No malware detected."
+
+            status, virus_name = result.get('stream', ('', ''))
+            if status == "FOUND":
+                return "FOUND", virus_name
             else:
-                # Example: { 'stream': ('FOUND', 'Eicar-Test-Signature') }
-                status, virus_name = result.get('stream', ('', ''))
-                if status == "FOUND":
-                    return ("FOUND", virus_name)
-                else:
-                    # Unexpected structure or something else
-                    return ("ERROR", f"Unexpected scan result: {result}")
+                return "ERROR", f"Unexpected scan result: {result}"
+
+        except ConnectionResetError as e:
+            if retry_once:
+                logging.warning("ClamAV connection reset. Retrying once...")
+                return self.scan_for_viruses(file_bytes, retry_once=False)
+            logging.error(f"❌ Virus scan connection reset (Errno 104): {e}")
+            return "ERROR", f"Connection reset: {e}"
+
         except Exception as e:
-            # Connection reset or other issues
-            return ("ERROR", str(e))
+            logging.error(f"❌ Virus scan error: {e}")
+            return "ERROR", str(e)
+
 
 
     def is_excel_file(self, file_bytes: bytes) -> bool:
@@ -161,6 +171,18 @@ class SecurityManager:
         except Exception as e:
             logging.error(f"❌ MIME check error: {e}")
             return False
+
+
+    def log_quarantine(self, url: str, reason: str, file_size: int = None, mime_type: str = None, log_path="logs/quarantine.log"):
+        """
+        Log a quarantined file with NYC timestamp, reason, size, and MIME type.
+        Format: <timestamp> <tab> <url> <tab> <reason> <tab> <size_bytes> <tab> <mime_type>
+        """
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        timestamp = datetime.now(ZoneInfo("America/New_York")).isoformat()
+        with open(log_path, "a") as f:
+            f.write(f"{timestamp}\t{url}\t{reason}\t{file_size or 'N/A'}\t{mime_type or 'N/A'}\n")
+
 
 
 
@@ -187,6 +209,8 @@ class BaseScraper(ABC):
         )
         # Attach a security manager (virus + MIME checks)
         self._security_manager = security_manager or SecurityManager()
+        self._mime_only_approvals = 0
+
 
     @property
     def driver(self):
@@ -227,51 +251,66 @@ class BaseScraper(ABC):
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
     async def download_excel(self, url: str):
-        """
-        Downloads an Excel file, then runs security checks
-        (virus scan + MIME check). Returns (url, content) or (url, None).
-        """
         try:
             async with self._session.stream("GET", url, timeout=10) as resp:
-                if resp.status_code == 200:
-                    chunks = []
-                    async for chunk in resp.aiter_bytes(chunk_size=CHUNK_SIZE):
-                        chunks.append(chunk)
-                    content = b"".join(chunks)
-
-                    # 1) Virus Scan
-                    scan_status, message = self._security_manager.scan_for_viruses(content)
-                    if scan_status == "ERROR":
-                        # Means we failed to connect or scanning failed
-                        logging.error(
-                            f"❌ Virus scan error for {url}: {message} - skipping file (unknown status)."
-                        )
-                        return url, None
-                    elif scan_status == "FOUND":
-                        # Means actual virus was detected
-                        logging.error(
-                            f"❌ Virus/malware found in {url}. Virus name/details: {message}"
-                        )
-                        return url, None
-                    else:
-                        # "OK" => proceed
-                        logging.debug(f"✅ Virus scan passed for {url}: {message}")
-
-                    # 2) MIME-Type Check (example)
-                    if not self._security_manager.is_excel_file(content):
-                        logging.error(f"❌ File not recognized as Excel: {url} - skipping.")
-                        return url, None
-                    else:
-                        logging.debug(f"✅ MIME check passed for {url}.")
-
-                    # If we reach here => file is "clean" & recognized as Excel
-                    return url, content
-                else:
+                if resp.status_code != 200:
                     logging.error(f"❌ Download failed {resp.status_code}: {url}")
                     return url, None
+
+                chunks = []
+                async for chunk in resp.aiter_bytes(chunk_size=CHUNK_SIZE):
+                    chunks.append(chunk)
+                content = b"".join(chunks)
+                size_bytes = len(content)
+
+                # 🔒 1. Virus scan
+                scan_status, message = self._security_manager.scan_for_viruses(content)
+                if scan_status == "FOUND":
+                    logging.error(f"❌ Virus/malware found in {url}: {message}")
+                    self._security_manager.log_quarantine(url, f"Virus: {message}", size_bytes)
+                    return url, None
+
+                elif scan_status == "ERROR":
+                    # 🧪 Fallback: MIME only if scan fails
+                    mime_pass = self._security_manager.is_excel_file(content)
+                    mime_type = "unknown"
+                    try:
+                        import magic
+                        mime_type = magic.from_buffer(content, mime=True)
+                    except Exception as e:
+                        logging.warning(f"Could not determine MIME type: {e}")
+
+                    if mime_pass:
+                         logging.warning(f"⚠️ Scan failed but MIME is valid for {url}. Proceeding with caution.")
+                         self._mime_only_approvals += 1  # ✅ Track it
+                         self._security_manager.log_quarantine(url, "ScanError, allowed via MIME", size_bytes, mime_type)
+                         return url, content
+                    else:
+                        logging.error(f"❌ MIME also failed for {url}. Skipping.")
+                        self._security_manager.log_quarantine(url, "ScanError + Bad MIME", size_bytes, mime_type)
+                        return url, None
+
+                # 🔍 2. MIME-type check
+                mime_type = "unknown"
+                try:
+                    import magic
+                    mime_type = magic.from_buffer(content, mime=True)
+                except Exception as e:
+                    logging.warning(f"Could not determine MIME type: {e}")
+
+                if not self._security_manager.is_excel_file(content):
+                    logging.error(f"❌ File not recognized as Excel: {url}")
+                    self._security_manager.log_quarantine(url, "Unrecognized MIME", size_bytes, mime_type)
+                    return url, None
+
+                return url, content
+
         except Exception as e:
-            logging.error(f"❌ Error streaming {url}: {type(e).__name__} - {e}", exc_info=True)
+            logging.error(f"❌ Error downloading {url}: {type(e).__name__} - {e}", exc_info=True)
+            self._security_manager.log_quarantine(url, f"DownloadError: {e}")
             return url, None
+
+
 
     async def concurrent_fetch(self, urls):
         tasks = [self.download_excel(u) for u in urls]
@@ -481,3 +520,17 @@ class NYCInfoHubScraper(BaseScraper):
             new_hash = hash_results.get(url)
             if new_hash:
                 self.save_file(url, content, new_hash)
+
+        # ✅ MIME fallback summary
+        if hasattr(self, "_mime_only_approvals") and self._mime_only_approvals > 0:
+            logging.warning(
+                f"⚠️ {self._mime_only_approvals} files were allowed based only on MIME check (virus scan failed). "
+                f"Review logs/quarantine.log for details."
+        )
+
+                
+                
+def run_scraper():
+    import asyncio
+    from main import main
+    asyncio.run(main())

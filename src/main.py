@@ -3,7 +3,7 @@ import sys
 import logging
 import asyncio
 from logging.handlers import RotatingFileHandler
-from .excel_scraper import NYCInfoHubScraper
+from excel_scraper import NYCInfoHubScraper
 
 # Ensure stdout is line-buffered so logs appear in real time
 sys.stdout.reconfigure(line_buffering=True)
