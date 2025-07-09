@@ -3,7 +3,7 @@
 import pytest
 import hashlib
 from unittest.mock import patch, MagicMock
-from src.excel_scraper import NYCInfoHubScraper, SecurityManager
+from src.excel_scraper.scraper import NYCInfoHubScraper, SecurityManager
 import platform
 
 def test_compute_file_hash():

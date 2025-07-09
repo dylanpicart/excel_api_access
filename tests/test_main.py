@@ -3,8 +3,8 @@ import asyncio
 import logging
 import hashlib
 from unittest.mock import patch, MagicMock
-from src.excel_scraper import NYCInfoHubScraper
-from src.main import main as main_entrypoint
+from src.excel_scraper.scraper import NYCInfoHubScraper
+from src.excel_scraper.main import main as main_entrypoint
 
 @pytest.mark.asyncio
 async def test_main_scraper_flow():

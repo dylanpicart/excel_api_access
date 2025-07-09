@@ -5,7 +5,7 @@ import logging
 import asyncio
 
 # Updated import to excel_scraper instead of src.excel_scraper
-from src.excel_scraper import NYCInfoHubScraper
+from src.excel_scraper.scraper import NYCInfoHubScraper
 
 @pytest.fixture(scope="session")
 def test_scraper():
