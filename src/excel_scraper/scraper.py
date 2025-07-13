@@ -530,7 +530,13 @@ class NYCInfoHubScraper(BaseScraper):
 
                 
                 
-def run_scraper():
+def run_scraper(base_dir=None):
     import asyncio
-    from .main import main
-    asyncio.run(main())
+    from .scraper import NYCInfoHubScraper
+    
+    if base_dir is None:
+        base_dir = os.getcwd()
+        
+    scraper = NYCInfoHubScraper(base_dir=base_dir)
+    asyncio.run(scraper.scrape_data())
+
