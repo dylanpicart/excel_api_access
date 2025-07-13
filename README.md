@@ -69,7 +69,7 @@ security_manager = SecurityManager(skip_windows_scan=False)
 
 [![PyPI version](https://badge.fury.io/py/nyc_infohub_excel_api_access.svg)](https://pypi.org/project/nyc_infohub_excel_api_access/)
 
-**Version: 1.0.8**
+**Version: 1.0.15**
 
 A Python package for scraping and downloading Excel datasets from NYC InfoHub using Selenium, httpx, asyncio, and virus/MIME validation is available.
 
