@@ -14,7 +14,8 @@ async def main():
     Main entry point for running the NYCInfoHubScraper.
     Delegates the entire scraping workflow to the scraper's scrape_data().
     """
-    scraper = NYCInfoHubScraper()
+    script_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    scraper = NYCInfoHubScraper(base_dir=script_dir)
     try:
         # The new refactored pipeline is entirely within scrape_data()
         await scraper.scrape_data()

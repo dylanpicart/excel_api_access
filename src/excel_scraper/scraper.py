@@ -377,10 +377,10 @@ class NYCInfoHubScraper(BaseScraper):
     }
 
     def __init__(self, base_dir=None, data_dir=None, hash_dir=None, log_dir=None, skip_win_scan=True):
-        super().__init__(security_manager=SecurityManager("/var/run/clamav/clamd.ctl", skip_windows_scan=skip_win_scan), base_dir=base_dir)
-
         script_dir = os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd()
         self._base_dir = base_dir or os.path.join(script_dir, "..")
+        super().__init__(security_manager=SecurityManager("/var/run/clamav/clamd.ctl", skip_windows_scan=skip_win_scan), base_dir=self._base_dir)
+
         self._data_dir = data_dir or os.path.join(self._base_dir, "data")
         self._hash_dir = hash_dir or os.path.join(self._base_dir, "hashes")
         self._log_dir = log_dir or os.path.join(self._base_dir, "logs")
