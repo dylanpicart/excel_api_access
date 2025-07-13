@@ -22,6 +22,7 @@ import platform
 
 load_dotenv()
 logging.info(f"CHROMEDRIVER_PATH: {os.environ.get('CHROMEDRIVER_PATH')}")
+BASE_DIR = os.getenv("NYC_SCRAPER_DATA_DIR", os.getcwd())
 
 EXCEL_FILE_EXTENSIONS = ('.xls', '.xlsx', '.xlsb')
 CHUNK_SIZE = 65536
@@ -196,7 +197,7 @@ class BaseScraper(ABC):
     - (Optional) Security checks delegated to SecurityManager
     """
 
-    def __init__(self, security_manager=None):
+    def __init__(self, security_manager=None, base_dir=BASE_DIR):
         """
         Optionally pass in a custom SecurityManager. If not provided,
         we'll create a default instance (which does ClamAV + python-magic checks).
@@ -207,25 +208,23 @@ class BaseScraper(ABC):
             limits=httpx.Limits(max_connections=80, max_keepalive_connections=40),
             timeout=5
         )
-        # Attach a security manager (virus + MIME checks)
         self._security_manager = security_manager or SecurityManager()
         self._mime_only_approvals = 0
-
+        self._base_dir = base_dir  # Explicitly private
 
     @property
     def driver(self):
-        """
-        Expose the private `_driver` so tests that do
-        patching can still access it as test_scraper.driver.
-        """
         return self._driver
 
     @property
     def session(self):
-        """
-        Same for `_session`: exposing publicly for test patching.
-        """
         return self._session
+
+    def get_data_dir(self, category=""):
+        self._data_path = os.path.join(self._base_dir, "data", category)
+        os.makedirs(self._data_path, exist_ok=True)
+        logging.info(f"Data directory explicitly set: {self._data_path}")
+        return self._data_path
 
     def configure_driver(self):
         logging.info("Starting WebDriver configuration...")
@@ -378,7 +377,8 @@ class NYCInfoHubScraper(BaseScraper):
     }
 
     def __init__(self, base_dir=None, data_dir=None, hash_dir=None, log_dir=None, skip_win_scan=True):
-        super().__init__(security_manager=SecurityManager("/var/run/clamav/clamd.ctl", skip_windows_scan=skip_win_scan))
+        super().__init__(security_manager=SecurityManager("/var/run/clamav/clamd.ctl", skip_windows_scan=skip_win_scan), base_dir=base_dir)
+
         script_dir = os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd()
         self._base_dir = base_dir or os.path.join(script_dir, "..")
         self._data_dir = data_dir or os.path.join(self._base_dir, "data")
