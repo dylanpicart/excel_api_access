@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="nyc_infohub_excel_api_access",
-    version="1.0.10",
+    version="1.0.11",
     author="Dylan Picart",
     author_email="dylanpicart@mail.adelphi.edu",
     description="A Python scraper for downloading Excel datasets from NYC InfoHub.",
