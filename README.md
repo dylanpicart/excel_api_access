@@ -90,7 +90,13 @@ Run from the command line:
 nyc-infohub-scraper
 ```
 
-Installing this package gives you access to the CLI tool nyc-infohub-scraper, which launches the scraper pipeline from the terminal with a single command.
+Installing this package gives you access to the CLI tool nyc-infohub-scraper, which launches the scraper pipeline from the terminal with a single command. Otherwise in Python, run the following:
+
+```python
+from excel_scraper import scraper
+
+run_scraper()
+```
 
 ---
 
