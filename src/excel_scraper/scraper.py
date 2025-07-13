@@ -532,5 +532,5 @@ class NYCInfoHubScraper(BaseScraper):
                 
 def run_scraper():
     import asyncio
-    from main import main
+    from .main import main
     asyncio.run(main())
