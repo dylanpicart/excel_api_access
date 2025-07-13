@@ -23,7 +23,7 @@ async def test_main_scraper_flow():
         for url in mock_excel_links
     }
 
-    with patch("src.excel_scraper.NYCInfoHubScraper.scrape_data") as mock_scrape_data, \
+    with patch("src.excel_scraper.scraper.NYCInfoHubScraper.scrape_data") as mock_scrape_data, \
          patch.object(NYCInfoHubScraper, "save_file") as mock_save:
 
         mock_scrape_data.return_value = None  # skip real flow
